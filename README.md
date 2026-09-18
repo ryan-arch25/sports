@@ -514,8 +514,10 @@ morning still gets a message: *"0 edges above 1% today"* is worth knowing.
 | `summary_window_hours` | `3.0` | how long it stays open |
 
 Alerts need the database, because that is where "already said this today"
-lives. A dashboard running with `DASHBOARD_WRITE_DB=false` therefore stays
-quiet rather than re-announcing the same edges every half hour.
+lives, as does the line history. **`DASHBOARD_WRITE_DB` defaults to on, so
+there is nothing to set** — it exists only to turn database writes *off*, and a
+dashboard running with `DASHBOARD_WRITE_DB=false` keeps quiet and records no
+movement rather than re-announcing the same edges every half hour.
 
 ## Web dashboard
 
@@ -561,16 +563,23 @@ above and the price below, and the sharp cells name the book they came from, so
 you can see at a glance whether "sharp" here means Pinnacle, Circa or a
 consensus of the soft books.
 
-DraftKings cells are coloured by the **edge**, which weighs the number and the
-juice together. The two bands are deliberately uneven: green at +0.5% or better,
-red only at −1% or worse, plain text in between. Because the edge is measured
-against the *fair* price rather than the sharp book's posted one, DraftKings sits
-a few tenths behind Pinnacle on most of the board — that is the juice it charges,
-not a warning, and a symmetric band painted the ordinary case red. A better
-number bought with much worse juice is still not green, because it is not a
-better bet. The edge itself is printed in the cell only when it clears +0.5%, so
-the numbers on screen are the ones worth reading. `BETTER_BAND_PCT` and
+Cells are coloured by the **edge**, which weighs the number and the juice
+together. The two bands are uneven, and a long way apart: green at +0.5% or
+better, red only at −3% or worse, plain text in between. That is because the
+edge is measured against the *fair* price rather than the sharp book's posted
+one, and DraftKings' standard juice runs about 2% worse than Pinnacle's fair
+price — so the ordinary line on the board is a couple of points negative. A band
+tight enough to catch it would paint the whole slate red and say nothing. Red is
+reserved for prices worse than DK's own usual, which is what a bad half point
+looks like; green still means DK is the better price outright. A better number
+bought with much worse juice is not green either, because it is not a better
+bet. The edge itself is printed in the cell only when it clears +0.5%, so the
+numbers on screen are the ones worth reading. `BETTER_BAND_PCT` and
 `WORSE_BAND_PCT` in `cfb_edge/web/slate.py` set where the colour starts.
+
+The **Best** column uses the same two bands, from the same function, so the two
+cells of a row never show one edge in two colours. They differ only when they
+are different offers — which is the whole point of the column.
 
 Above each day's table sits one line — *DK is the better price on 4 of 16 lines
 on Saturday* — so the shape of the day reads before any cell does. The
@@ -599,8 +608,8 @@ where to actually place the bet, and often the answer is DraftKings anyway.
 "Best" is the same edge the rest of the page is built on, computed for each book
 against the same sharp fair line and translated through the half-point table when
 a book is on a different number. So a better number bought with worse juice does
-not win the column, and ties break by book name so the winner does not flicker
-between scans. Pinnacle and Circa are excluded: they are the yardstick, not
+not win the column, it is coloured by the same thresholds as the DK cell beside
+it, and ties break by book name so the winner does not flicker between scans. Pinnacle and Circa are excluded: they are the yardstick, not
 somewhere most of the group has an account. Change that with `[books] shop`.
 
 This costs no extra API calls. The request already sends a `bookmakers` filter
@@ -696,6 +705,7 @@ configuration:
    | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data`. Set it to your volume's mount path |
    | `HALFPOINT_TABLE` | no | Path to the half-point table, overriding `$DATA_DIR/halfpoint.json` |
    | `DISCORD_WEBHOOK_URL` | no | Turns on the dashboard's alerts; unset means silence |
+   | `DASHBOARD_WRITE_DB` | no | **On by default.** Set to `false` only to stop the dashboard writing the run log, line history and alert record |
    | `APP_USER` | no | User the entrypoint drops to, default `cfbedge` |
 
    `config.toml` is gitignored, so it is not in the image — on Railway these
@@ -772,7 +782,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-810 tests, no network access required. The odds conversion and de-vig math are
+819 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself

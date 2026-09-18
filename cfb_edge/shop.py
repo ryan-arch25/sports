@@ -144,16 +144,26 @@ def book_name(book: str) -> str:
 
 def serialize_offer(offer: Offer | None, market: str, prefix: str = "") -> dict[str, Any] | None:
     from cfb_edge.oddsmath import format_american
-    from cfb_edge.web.slate import number_text
+    from cfb_edge.web.slate import BETTER_BAND_PCT, number_text, verdict_for
 
     if offer is None:
         return None
+    # The same bands as the DK column, from the same function. Two cells side by
+    # side showing the same edge in different colours would be worse than no
+    # colour at all.
+    verdict = verdict_for(market, offer.price, offer.edge_pct)
     return {
         "book": offer.book,
         "book_label": book_label(offer.book),
         "number": number_text(market, offer.point, prefix),
         "price": format_american(offer.price),
         "edge_pct": None if offer.edge_pct is None else round(offer.edge_pct, 2),
+        "verdict": verdict,
+        "show_edge": (
+            verdict is not None
+            and offer.edge_pct is not None
+            and offer.edge_pct >= BETTER_BAND_PCT
+        ),
     }
 
 

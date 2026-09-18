@@ -142,6 +142,68 @@ class TestSerialization:
     def test_nothing_serializes_to_nothing(self):
         assert serialize_offer(None, "spreads") is None
 
+    def test_the_best_cell_is_coloured_by_the_same_bands_as_dk(self, cfg):
+        """Two cells side by side showing one edge in two colours would be worse
+        than no colour at all."""
+        from cfb_edge.web.slate import compare_side, verdict_for
+
+        game = shopping_game(
+            pinnacle={"spreads": [Outcome("Home Team", -110, -3.5),
+                                  Outcome("Away Team", -110, 3.5)]},
+            draftkings={"spreads": [Outcome("Home Team", -150, -3.5),
+                                    Outcome("Away Team", 120, 3.5)]},
+        )
+        offer = best_offers(game, "spreads", cfg)["Home Team"]
+        payload = serialize_offer(offer, "spreads")
+        assert payload["verdict"] == compare_side(offer.row)
+        assert payload["verdict"] == verdict_for("spreads", offer.price, offer.edge_pct)
+
+    @pytest.mark.parametrize(
+        "edge,verdict", [(2.0, "better"), (0.5, "better"), (-2.0, "neutral"),
+                         (-3.0, "worse"), (-8.0, "worse")],
+    )
+    def test_the_offer_bands(self, cfg, edge, verdict):
+        from cfb_edge.shop import Offer
+
+        game = shopping_game(
+            pinnacle={"spreads": [Outcome("Home Team", -110, -3.5),
+                                  Outcome("Away Team", -110, 3.5)]},
+            draftkings={"spreads": [Outcome("Home Team", -110, -3.5),
+                                    Outcome("Away Team", -110, 3.5)]},
+        )
+        row = best_offers(game, "spreads", cfg)["Home Team"].row
+        row.edge = edge / 100.0
+        assert serialize_offer(Offer("draftkings", row), "spreads")["verdict"] == verdict
+
+    def test_a_long_shot_best_price_stays_plain(self, cfg):
+        """Same suppression as the DK column, for the same reason."""
+        from cfb_edge.shop import Offer
+
+        game = shopping_game(
+            pinnacle={"h2h": [Outcome("Home Team", -4000), Outcome("Away Team", 1400)]},
+            draftkings={"h2h": [Outcome("Home Team", -5000), Outcome("Away Team", 1600)]},
+        )
+        from cfb_edge.edges import evaluate_market
+
+        rows = {r.side: r for r in evaluate_market(game, "h2h", cfg)}
+        payload = serialize_offer(Offer("draftkings", rows["Away Team"]), "h2h")
+        assert payload["verdict"] is None
+
+    def test_the_edge_is_printed_only_when_it_is_green(self, cfg):
+        from cfb_edge.shop import Offer
+
+        game = shopping_game(
+            pinnacle={"spreads": [Outcome("Home Team", -110, -3.5),
+                                  Outcome("Away Team", -110, 3.5)]},
+            draftkings={"spreads": [Outcome("Home Team", -110, -3.5),
+                                    Outcome("Away Team", -110, 3.5)]},
+        )
+        row = best_offers(game, "spreads", cfg)["Home Team"].row
+        row.edge = -0.04
+        assert serialize_offer(Offer("draftkings", row), "spreads")["show_edge"] is False
+        row.edge = 0.02
+        assert serialize_offer(Offer("draftkings", row), "spreads")["show_edge"] is True
+
     @pytest.mark.parametrize(
         "book,short,long",
         [("draftkings", "DK", "DraftKings"), ("espnbet", "ESPN", "ESPN Bet"),

@@ -205,7 +205,8 @@
   .odds .price { display: block; font-size: 12px; color: var(--muted); }
   .odds.better { color: var(--good); }
   .odds.worse { color: var(--bad); }
-  .odds.better .price, .odds.worse .price { color: inherit; opacity: 0.75; }
+  .odds.better .price, .odds.worse .price,
+  .odds.better .book, .odds.worse .book { color: inherit; opacity: 0.75; }
   .odds .cell-edge { display: block; font-size: 12px; font-weight: 600; }
   .odds.none { color: var(--muted); font-size: 13px; }
   .odds .line { display: block; white-space: nowrap; }
@@ -398,17 +399,18 @@
     <p class="legend">
       Green is a price comparison, not a prediction: it means DraftKings is paying at
       least 0.5% better than Pinnacle on that side.
-      DraftKings cells read <span class="key good">green</span> when the edge against the
-      sharp book is 0.5% or better and <span class="key bad">red</span> only at −1% or worse.
-      Everything in between stays plain: DK is usually a few tenths behind Pinnacle, and that
-      is ordinary juice rather than a warning. The edge weighs the number and the price
+      DK's standard juice runs about 2% worse than Pinnacle's fair price, so most lines show
+      plain. <span class="key bad">Red</span> flags lines that are worse than DK's usual
+      (−3% or worse); <span class="key good">green</span> flags lines where DK is the
+      better price (+0.5% or better). The edge weighs the number and the price
       together, so a better number bought with worse juice is not green. Rows marked
       <span class="key tag">est.</span> were priced with the published half-point estimate.
       Moneylines longer than +400 or shorter than −400 are left plain: a better price on a
       long shot is real but not actionable.
       <span class="key">Best</span> is the best number-and-price across the US books in the
-      same response — DraftKings, FanDuel, BetMGM, Caesars and ESPN Bet — scored the same
-      way, so it is a wider question than DK against Pinnacle and often DK wins it anyway.
+      same response — DraftKings, FanDuel, BetMGM, Caesars and ESPN Bet — scored and
+      coloured exactly the same way, so it is a wider question than DK against Pinnacle and
+      often DK wins it anyway.
       An arrow means that number or price moved in the last 6 hours; hover it for what it
       was. Click any game to see every recorded move from the last 48 hours.
     </p>
@@ -762,6 +764,9 @@
       td.textContent = "no line";
       return td;
     }
+    if (best.verdict === "better" || best.verdict === "worse") {
+      td.classList.add(best.verdict);
+    }
     var head = document.createElement("span");
     head.className = "line";
     head.textContent = best.number || best.price;
@@ -771,6 +776,12 @@
       priceLine.className = "price";
       priceLine.textContent = best.price;
       td.appendChild(priceLine);
+    }
+    if (best.show_edge) {
+      var edge = document.createElement("span");
+      edge.className = "cell-edge";
+      edge.textContent = "+" + best.edge_pct.toFixed(2) + "%";
+      td.appendChild(edge);
     }
     var book = document.createElement("span");
     book.className = "book";

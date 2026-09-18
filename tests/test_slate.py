@@ -75,10 +75,11 @@ class TestCompareSide:
     @pytest.mark.parametrize(
         "edge,expected",
         [(2.0, BETTER), (0.5, BETTER), (0.49, NEUTRAL), (0.0, NEUTRAL),
-         (-0.5, NEUTRAL), (-0.99, NEUTRAL), (-1.0, WORSE), (-3.0, WORSE)],
+         (-0.5, NEUTRAL), (-2.0, NEUTRAL), (-2.99, NEUTRAL), (-3.0, WORSE),
+         (-6.0, WORSE)],
     )
     def test_the_bands(self, edge, expected, cfg):
-        """Uneven on purpose: the ordinary half-point of juice is not a warning."""
+        """Far apart on purpose: DK's own standard juice is not a warning."""
         rows = self.market(
             cfg,
             dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],

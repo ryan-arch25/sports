@@ -21,12 +21,13 @@ BETTER = "better"
 WORSE = "worse"
 NEUTRAL = "neutral"
 
-# The bands are deliberately uneven. DraftKings sits a few tenths of a point
-# behind Pinnacle on most of the board; that is the juice it charges, not a
-# warning, and painting it red would make the ordinary case look alarming. So
-# green wants a real edge and red waits until the price is properly bad.
+# The bands are deliberately uneven, and a long way apart. DraftKings' standard
+# juice runs about 2% worse than Pinnacle's fair price, so the ordinary line on
+# the board is a couple of points negative and colouring that red would flag the
+# whole slate. Red is reserved for prices worse than DK's own usual -- a bad half
+# point, say -- and green still means DK is the better price outright.
 BETTER_BAND_PCT = 0.5
-WORSE_BAND_PCT = -1.0
+WORSE_BAND_PCT = -3.0
 
 # A moneyline past this, either way, is left in plain text. A better price on a
 # 14-to-1 shot is real but not actionable, and colouring it green reads as a
@@ -42,8 +43,8 @@ TOTAL_SIDES = ("Over", "Under")
 MARKET_KEYS = ("spread", "total", "h2h")
 
 
-def compare_side(row: EdgeRow | None) -> str | None:
-    """Is DraftKings' offer better than the sharp book's on this side?
+def verdict_for(market: str, price: float | None, edge_pct: float | None) -> str | None:
+    """Which band an offer falls in. One rule, so every coloured cell agrees.
 
     The verdict is the edge, which already carries both halves of the question:
     the number gap, converted through the half-point table, and the juice. A
@@ -52,15 +53,22 @@ def compare_side(row: EdgeRow | None) -> str | None:
 
     None means there is nothing to compare against -- no sharp line, so no edge.
     """
-    if row is None or row.edge_pct is None:
+    if edge_pct is None or price is None:
         return None
-    if row.market == "h2h" and abs(float(row.dk_price)) > LONGSHOT_PRICE:
+    if market == "h2h" and abs(float(price)) > LONGSHOT_PRICE:
         return None
-    if row.edge_pct >= BETTER_BAND_PCT:
+    if edge_pct >= BETTER_BAND_PCT:
         return BETTER
-    if row.edge_pct <= WORSE_BAND_PCT:
+    if edge_pct <= WORSE_BAND_PCT:
         return WORSE
     return NEUTRAL
+
+
+def compare_side(row: EdgeRow | None) -> str | None:
+    """Is DraftKings' offer better than the sharp book's on this side?"""
+    if row is None:
+        return None
+    return verdict_for(row.market, row.dk_price, row.edge_pct)
 
 
 def number_text(market: str, point: float | None, prefix: str = "") -> str:
