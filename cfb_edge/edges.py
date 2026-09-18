@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from cfb_edge.config import Config
 from cfb_edge.fair import FairLine, fair_lines, resolve_book
@@ -52,6 +52,7 @@ class EdgeRow:
     status: str
     note: str = ""
     translated_from: float | None = None
+    translation_source: str | None = None  # "table" or "estimated"
 
     @property
     def matchup(self) -> str:
@@ -60,6 +61,11 @@ class EdgeRow:
     @property
     def market_label(self) -> str:
         return market_label(self.market)
+
+    @property
+    def is_estimated(self) -> bool:
+        """Priced off the published chart rather than a built table."""
+        return self.translation_source == "estimated"
 
     @property
     def is_bet(self) -> bool:
@@ -101,6 +107,7 @@ class EdgeRow:
         data["market_label"] = self.market_label
         data["edge_pct"] = self.edge_pct
         data["line_diff"] = self.line_diff
+        data["is_estimated"] = self.is_estimated
         return data
 
 
@@ -208,10 +215,11 @@ def _row_against(
     status = PRICED
     note = ""
     translated_from = None
+    translation_source = None
 
     if not _same_number(dk_point, sharp_side.point):
-        moved = _translate(table, market, side, sharp_side.point, dk_point, fair_prob)
-        if moved is None:
+        priced = _translate(table, market, side, sharp_side.point, dk_point, fair_prob)
+        if priced is None:
             row = _empty_row(
                 game, market, side, dk_point, dk_price, DIFFERENT_NUMBER,
                 f"DK {format_point(market, dk_point)} vs {sharp.label} "
@@ -223,10 +231,16 @@ def _row_against(
             row.sharp_price = sharp_side.price
             row.sharp_hold = sharp.hold
             return row
+        moved, translation_source = priced
         status = TRANSLATED
         translated_from = sharp_side.point
+        origin = (
+            "published half-point estimate"
+            if translation_source == "estimated"
+            else "half-point table"
+        )
         note = (
-            f"half-point table moved {sharp.label} "
+            f"{origin} moved {sharp.label} "
             f"{format_point(market, sharp_side.point)} ({fair_prob * 100:.1f}%) to DK "
             f"{format_point(market, dk_point)} ({moved * 100:.1f}%)"
         )
@@ -261,19 +275,30 @@ def _row_against(
         status=status,
         note=note,
         translated_from=translated_from,
+        translation_source=translation_source,
     )
 
 
+def as_tables(table: Any) -> list[Any]:
+    """Accept one table or several, so callers can stay simple."""
+    if table is None:
+        return []
+    if isinstance(table, (list, tuple)):
+        return [t for t in table if t is not None]
+    return [table]
+
+
 def _translate(
-    table: "HalfPointTable | None",
+    table: Any,
     market: str,
     side: str,
     sharp_point: float | None,
     dk_point: float | None,
     fair_prob: float,
-) -> float | None:
-    """Fair probability at DK's number, or None if it cannot be priced."""
-    if table is None or sharp_point is None or dk_point is None:
+) -> tuple[float, str] | None:
+    """Fair probability at DK's number, and which table got it there."""
+    tables = as_tables(table)
+    if not tables or sharp_point is None or dk_point is None:
         return None
     from cfb_edge.halfpoint import market_kind, side_role
 
@@ -283,7 +308,13 @@ def _translate(
     role = side_role(kind, side, sharp_point)
     if role is None:
         return None
-    return table.translate(kind, role, fair_prob, float(sharp_point), float(dk_point))
+    for candidate in tables:
+        moved = candidate.translate(
+            kind, role, fair_prob, float(sharp_point), float(dk_point)
+        )
+        if moved is not None:
+            return moved, getattr(candidate, "source_name", "table")
+    return None
 
 
 def _same_number(a: float | None, b: float | None) -> bool:

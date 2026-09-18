@@ -53,6 +53,14 @@ class Config:
     halfpoint_enabled: bool = True
     halfpoint_window: float = 1.5
     halfpoint_min_sample: int = 200
+    # Used when no table has been built. "estimated" prices off a published
+    # half-point chart; "none" leaves those lines flagged as before.
+    halfpoint_fallback: str = "estimated"
+    estimate_spread_half_point: float = 0.5  # points of win probability
+    estimate_spread_key_numbers: tuple[float, ...] = (3.0, 7.0)
+    estimate_key_multiplier: float = 2.0
+    estimate_total_half_point: float = 0.4
+    estimate_total_range: tuple[float, float] = (45.0, 60.0)
     line_providers: tuple[str, ...] = ("Bovada", "DraftKings", "ESPN Bet", "consensus")
     # props and alternate lines (one API request per game, so opt-in)
     prop_markets: tuple[str, ...] = (
@@ -223,6 +231,21 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         cfg.halfpoint_min_sample = int(halfpoint["min_sample"])
     if "line_providers" in halfpoint:
         cfg.line_providers = tuple(str(p) for p in halfpoint["line_providers"])
+    if "fallback" in halfpoint:
+        cfg.halfpoint_fallback = str(halfpoint["fallback"]).strip().lower()
+    if "estimate_spread_half_point" in halfpoint:
+        cfg.estimate_spread_half_point = float(halfpoint["estimate_spread_half_point"])
+    if "estimate_spread_key_numbers" in halfpoint:
+        cfg.estimate_spread_key_numbers = tuple(
+            float(n) for n in halfpoint["estimate_spread_key_numbers"]
+        )
+    if "estimate_key_multiplier" in halfpoint:
+        cfg.estimate_key_multiplier = float(halfpoint["estimate_key_multiplier"])
+    if "estimate_total_half_point" in halfpoint:
+        cfg.estimate_total_half_point = float(halfpoint["estimate_total_half_point"])
+    if "estimate_total_range" in halfpoint:
+        low, high = halfpoint["estimate_total_range"]
+        cfg.estimate_total_range = (float(low), float(high))
 
     props = data.get("props") or {}
     if "markets" in props:
@@ -264,6 +287,11 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         os.environ.get("DISCORD_WEBHOOK_URL") or cfg.discord_webhook_url or None
     )
 
+    if cfg.halfpoint_fallback not in ("estimated", "none"):
+        raise ConfigError(
+            f"unknown halfpoint fallback {cfg.halfpoint_fallback!r}; "
+            "choose from estimated, none"
+        )
     if cfg.devig_method not in DEVIG_METHODS:
         raise ConfigError(
             f"unknown devig method {cfg.devig_method!r}; "

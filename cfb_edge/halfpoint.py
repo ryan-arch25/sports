@@ -100,6 +100,9 @@ class HalfPointTable:
     prob_floor: float = 0.02
     max_sharp_prob: float = 0.95
 
+    source_name: str = "table"
+    is_estimate: bool = False
+
     def is_empty(self) -> bool:
         return not self.spreads and not self.totals
 
@@ -241,6 +244,108 @@ def _signed(value: float) -> str:
     return f"{_zero(value):+g}"
 
 
+@dataclass
+class EstimatedTable:
+    """A published half-point chart, used when no table has been built.
+
+    `cfb-edge halfpoint build` produces a real distribution from real results;
+    this is the stand-in for a deployment that has not run the CollegeFootballData
+    fetch. It is not measured from anything: it is the standard shape of a
+    published chart -- a flat value per half point, roughly doubled on the key
+    numbers where margins pile up -- and every line it prices is labelled `est.`
+    so it is never mistaken for the built table.
+
+    Values are fractions of win probability per half point.
+    """
+
+    spread_half_point: float = 0.005
+    spread_key_numbers: tuple[float, ...] = (3.0, 7.0)
+    key_multiplier: float = 2.0
+    total_half_point: float = 0.004
+    total_range: tuple[float, float] = (45.0, 60.0)
+
+    max_move: float = 3.0
+    prob_floor: float = 0.02
+    max_sharp_prob: float = 0.95
+
+    source_name: str = "estimated"
+    is_estimate: bool = True
+
+    def is_empty(self) -> bool:
+        return False
+
+    def step_value(self, kind: str, low: float, high: float) -> float:
+        """What the half point between two adjacent numbers is worth."""
+        if kind == SPREAD:
+            on_key = any(
+                abs(abs(edge) - key) < 1e-9
+                for edge in (low, high)
+                for key in self.spread_key_numbers
+            )
+            return self.spread_half_point * (self.key_multiplier if on_key else 1.0)
+        return self.total_half_point
+
+    def move_value(self, kind: str, sharp_point: float, dk_point: float) -> float:
+        """Total probability between two numbers, as a positive magnitude."""
+        low, high = sorted((float(sharp_point), float(dk_point)))
+        gap = high - low
+        if gap <= 0:
+            return 0.0
+        whole = int(gap / 0.5 + 1e-9)
+        total = 0.0
+        cursor = low
+        for _ in range(whole):
+            total += self.step_value(kind, cursor, cursor + 0.5)
+            cursor += 0.5
+        remainder = high - cursor
+        if remainder > 1e-9:
+            # A number off the half-point grid: charge the part of a step it used.
+            total += self.step_value(kind, cursor, high) * (remainder / 0.5)
+        return total
+
+    def translate(
+        self,
+        kind: str,
+        role: str,
+        sharp_prob: float,
+        sharp_point: float,
+        dk_point: float,
+        reference: float | None = None,
+    ) -> float | None:
+        """Move a fair probability from the sharp number to DraftKings'."""
+        if abs(dk_point - sharp_point) > self.max_move:
+            return None
+        if not (1 - self.max_sharp_prob) <= sharp_prob <= self.max_sharp_prob:
+            return None
+        direction = line_diff(role, sharp_point, dk_point)
+        if direction is None:
+            return None
+        if direction == 0:
+            return sharp_prob
+        value = self.move_value(kind, sharp_point, dk_point)
+        moved = sharp_prob + math.copysign(value, direction)
+        if not self.prob_floor <= moved <= 1.0 - self.prob_floor:
+            return None
+        return moved
+
+    def half_point_values(self, kind: str, max_number: float = 21.0) -> list[dict[str, Any]]:
+        """The chart itself, for `cfb-edge halfpoint show`."""
+        rows: list[dict[str, Any]] = []
+        if kind == SPREAD:
+            numbers = _frange(0.0, max_number, 1.0)
+        else:
+            low, high = self.total_range
+            numbers = _frange(low, min(high, max_number) if max_number > low else high, 1.0)
+        for number in numbers:
+            rows.append({
+                "reference": number,
+                "prob_gain": self.step_value(kind, number - 0.5, number),
+                "landed_exactly": None,
+                "sample": None,
+            })
+        return rows
+
+
 def _threshold(kind: str, role: str, point: float) -> float:
     """The number the outcome variable must beat for this side to cover.
 
@@ -377,6 +482,39 @@ def load_table(path: Path | str) -> HalfPointTable | None:
     return HalfPointTable.from_dict(data)
 
 
+def estimated_table(cfg: Config) -> EstimatedTable:
+    """The published chart, with the numbers config supplies."""
+    return EstimatedTable(
+        spread_half_point=cfg.estimate_spread_half_point / 100.0,
+        spread_key_numbers=tuple(cfg.estimate_spread_key_numbers),
+        key_multiplier=cfg.estimate_key_multiplier,
+        total_half_point=cfg.estimate_total_half_point / 100.0,
+        total_range=tuple(cfg.estimate_total_range),
+    )
+
+
+def resolve_tables(cfg: Config) -> tuple[list[Any], list[str]]:
+    """Every table a scan may price with, best first, plus any warnings.
+
+    A built table goes first and the estimate catches whatever it refuses, so
+    turning on the real thing never costs coverage.
+    """
+    if not cfg.halfpoint_enabled:
+        return [], []
+    tables: list[Any] = []
+    warnings: list[str] = []
+    try:
+        built = load_table(cfg.halfpoint_table_path)
+    except HalfPointError as exc:
+        built = None
+        warnings.append(f"half-point table ignored: {exc}")
+    if built is not None and not built.is_empty():
+        tables.append(built)
+    if cfg.halfpoint_fallback == "estimated":
+        tables.append(estimated_table(cfg))
+    return tables, warnings
+
+
 def cmd_halfpoint_build(cfg: Config, args: argparse.Namespace) -> int:
     from cfb_edge.scores import connect, load_games
 
@@ -411,22 +549,49 @@ def cmd_halfpoint_show(cfg: Config, args: argparse.Namespace) -> int:
 
     path = Path(args.table) if args.table else cfg.halfpoint_table_path
     table = load_table(path)
-    if table is None:
-        print(f"no half-point table at {path}. run: cfb-edge halfpoint build", file=sys.stderr)
-        return 1
+    if table is None or table.is_empty():
+        if cfg.halfpoint_fallback != "estimated":
+            print(
+                f"no half-point table at {path}. run: cfb-edge halfpoint build",
+                file=sys.stderr,
+            )
+            return 1
+        table = estimated_table(cfg)
+        print()
+        print(f"no table built at {path}, showing the published estimate instead")
 
     kind = SPREAD if args.market == "spreads" else TOTAL
     rows = table.half_point_values(kind, max_number=args.max_number)
     if not rows:
-        print(f"no {args.market} reference lines with at least {table.min_sample} games")
+        print(
+            f"no {args.market} reference lines with at least "
+            f"{getattr(table, 'min_sample', 0)} games"
+        )
         return 1
 
-    meta = table.meta
-    seasons = meta.get("seasons") or []
-    span = f"{seasons[0]}-{seasons[1]}" if len(seasons) == 2 else "?"
-    print()
-    print(f"half-point values for {args.market} — {meta.get('games', '?')} games, {span}")
-    print(f"window ±{meta.get('window', '?')} pts, minimum sample {table.min_sample}")
+    if getattr(table, "is_estimate", False):
+        print()
+        print(f"half-point values for {args.market} — published estimate, not measured")
+        if kind == SPREAD:
+            print(
+                f"{table.spread_half_point * 100:g} pts of win probability per half "
+                f"point, ×{table.key_multiplier:g} on "
+                + ", ".join(f"{n:g}" for n in table.spread_key_numbers)
+            )
+        else:
+            low, high = table.total_range
+            print(
+                f"{table.total_half_point * 100:g} pts of win probability per half "
+                f"point, quoted for totals between {low:g} and {high:g}"
+            )
+        print("build a measured one with: cfb-edge scores fetch && cfb-edge halfpoint build")
+    else:
+        meta = table.meta
+        seasons = meta.get("seasons") or []
+        span = f"{seasons[0]}-{seasons[1]}" if len(seasons) == 2 else "?"
+        print()
+        print(f"half-point values for {args.market} — {meta.get('games', '?')} games, {span}")
+        print(f"window ±{meta.get('window', '?')} pts, minimum sample {table.min_sample}")
     print()
 
     if kind == SPREAD:
@@ -439,8 +604,8 @@ def cmd_halfpoint_show(cfg: Config, args: argparse.Namespace) -> int:
                 f"{r['reference']:g}",
                 f"{_signed(-r['reference'])} → {_signed(0.5 - r['reference'])}",
                 f"{r['prob_gain'] * 100:+.2f}%",
-                f"{r['landed_exactly'] * 100:.2f}%",
-                f"{r['sample']:,}",
+                "-" if r["landed_exactly"] is None else f"{r['landed_exactly'] * 100:.2f}%",
+                "-" if r["sample"] is None else f"{r['sample']:,}",
             ]
             for r in rows
         ]
@@ -454,8 +619,8 @@ def cmd_halfpoint_show(cfg: Config, args: argparse.Namespace) -> int:
                 f"{r['reference']:g}",
                 f"{r['reference']:g} → {r['reference'] - 0.5:g}",
                 f"{r['prob_gain'] * 100:+.2f}%",
-                f"{r['landed_exactly'] * 100:.2f}%",
-                f"{r['sample']:,}",
+                "-" if r["landed_exactly"] is None else f"{r['landed_exactly'] * 100:.2f}%",
+                "-" if r["sample"] is None else f"{r['sample']:,}",
             ]
             for r in rows
         ]

@@ -277,3 +277,133 @@ class TestLineDiff:
         diff = line_diff(UNDER, 53.0, 51.5)
         moved = halfpoint_table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5)
         assert diff < 0 and moved < 0.50
+
+
+class TestEstimatedTable:
+    """The published chart used when no table has been built from results."""
+
+    def table(self, **kwargs):
+        from cfb_edge.halfpoint import EstimatedTable
+
+        return EstimatedTable(**kwargs)
+
+    def test_a_plain_half_point_is_the_base_value(self):
+        assert self.table().step_value(SPREAD, -5.0, -5.5) == pytest.approx(0.005)
+
+    @pytest.mark.parametrize("low,high", [(-3.0, -3.5), (-2.5, -3.0), (3.0, 3.5), (6.5, 7.0)])
+    def test_a_step_touching_a_key_number_is_doubled(self, low, high):
+        assert self.table().step_value(SPREAD, low, high) == pytest.approx(0.010)
+
+    def test_totals_are_flat(self):
+        table = self.table()
+        assert table.step_value(TOTAL, 47.0, 47.5) == pytest.approx(0.004)
+        assert table.step_value(TOTAL, 3.0, 3.5) == pytest.approx(0.004)  # no key numbers
+
+    def test_a_move_adds_up_its_steps(self):
+        # 3.0 -> 4.5 is three half points, one of which touches the 3.
+        assert self.table().move_value(SPREAD, -3.0, -4.5) == pytest.approx(0.020)
+
+    def test_a_total_move_adds_up(self):
+        assert self.table().move_value(TOTAL, 53.0, 51.5) == pytest.approx(0.012)
+
+    def test_no_move_is_worth_nothing(self):
+        assert self.table().move_value(TOTAL, 53.0, 53.0) == 0.0
+
+    def test_a_number_off_the_half_point_grid_is_prorated(self):
+        # A quarter point is half of a half-point step.
+        assert self.table().move_value(TOTAL, 53.0, 52.75) == pytest.approx(0.002)
+
+    def test_direction_follows_the_side(self):
+        table = self.table()
+        assert table.translate(TOTAL, OVER, 0.50, 53.0, 51.5) == pytest.approx(0.512)
+        assert table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5) == pytest.approx(0.488)
+
+    def test_the_sides_stay_complementary(self):
+        table = self.table()
+        over = table.translate(TOTAL, OVER, 0.50, 53.0, 51.5)
+        under = table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5)
+        assert over + under == pytest.approx(1.0)
+
+    def test_buying_off_three_is_worth_double(self):
+        table = self.table()
+        key = table.translate(SPREAD, FAVORITE, 0.50, -3.0, -2.5) - 0.50
+        plain = table.translate(SPREAD, FAVORITE, 0.50, -5.0, -4.5) - 0.50
+        assert key == pytest.approx(2 * plain)
+
+    def test_the_same_number_is_left_alone(self):
+        assert self.table().translate(SPREAD, FAVORITE, 0.62, -3.0, -3.0) == pytest.approx(0.62)
+
+    def test_a_move_past_the_guard_is_refused(self):
+        assert self.table().translate(TOTAL, OVER, 0.50, 53.0, 44.0) is None
+
+    def test_a_lopsided_sharp_price_is_refused(self):
+        assert self.table().translate(SPREAD, FAVORITE, 0.98, -3.0, -3.5) is None
+
+    def test_a_result_off_the_scale_is_refused(self):
+        table = self.table(total_half_point=0.30)
+        assert table.translate(TOTAL, UNDER, 0.05, 53.0, 50.0) is None
+
+    def test_it_declares_itself_an_estimate(self):
+        table = self.table()
+        assert table.is_estimate is True
+        assert table.source_name == "estimated"
+        assert table.is_empty() is False
+
+    def test_the_values_are_configurable(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        cfg.estimate_spread_half_point = 1.5
+        cfg.estimate_key_multiplier = 3.0
+        cfg.estimate_spread_key_numbers = (3.0,)
+        table = estimated_table(cfg)
+        assert table.step_value(SPREAD, -7.0, -7.5) == pytest.approx(0.015)  # 7 no longer key
+        assert table.step_value(SPREAD, -3.0, -3.5) == pytest.approx(0.045)
+
+    def test_it_shows_a_chart(self):
+        rows = self.table().half_point_values(SPREAD, max_number=8)
+        by_line = {r["reference"]: r["prob_gain"] for r in rows}
+        assert by_line[3.0] == pytest.approx(0.010)
+        assert by_line[5.0] == pytest.approx(0.005)
+        assert all(r["sample"] is None for r in rows)
+
+
+class TestTableResolution:
+    def test_the_estimate_stands_in_when_nothing_is_built(self, cfg, tmp_path):
+        from cfb_edge.halfpoint import resolve_tables
+
+        cfg.halfpoint_table_path = tmp_path / "missing.json"
+        tables, warnings = resolve_tables(cfg)
+        assert [t.source_name for t in tables] == ["estimated"]
+        assert warnings == []
+
+    def test_a_built_table_goes_first_and_the_estimate_backs_it_up(
+        self, cfg, tmp_path, halfpoint_table
+    ):
+        from cfb_edge.halfpoint import resolve_tables, save_table
+
+        cfg.halfpoint_table_path = save_table(halfpoint_table, tmp_path / "hp.json")
+        tables, _ = resolve_tables(cfg)
+        assert [t.source_name for t in tables] == ["table", "estimated"]
+
+    def test_the_fallback_can_be_turned_off(self, cfg, tmp_path):
+        from cfb_edge.halfpoint import resolve_tables
+
+        cfg.halfpoint_table_path = tmp_path / "missing.json"
+        cfg.halfpoint_fallback = "none"
+        assert resolve_tables(cfg)[0] == []
+
+    def test_switching_the_whole_thing_off_wins(self, cfg):
+        from cfb_edge.halfpoint import resolve_tables
+
+        cfg.halfpoint_enabled = False
+        assert resolve_tables(cfg) == ([], [])
+
+    def test_a_broken_table_falls_back_with_a_warning(self, cfg, tmp_path):
+        from cfb_edge.halfpoint import resolve_tables
+
+        path = tmp_path / "hp.json"
+        path.write_text('{"version": 99}', encoding="utf-8")
+        cfg.halfpoint_table_path = path
+        tables, warnings = resolve_tables(cfg)
+        assert [t.source_name for t in tables] == ["estimated"]
+        assert warnings and "ignored" in warnings[0]

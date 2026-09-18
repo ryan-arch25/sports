@@ -85,6 +85,7 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
         "edge_pct": None if row.edge_pct is None else round(row.edge_pct, 2),
         "verdict": compare_side(row),
         "translated": row.status == "translated",
+        "estimated": row.is_estimated,
     }
 
 

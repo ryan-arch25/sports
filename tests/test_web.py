@@ -621,3 +621,62 @@ class TestSlateApi:
         assert 'data-tab="edges"' in body and 'data-tab="slate"' in body
         assert 'id="search"' in body
         assert "renderSlate" in body
+
+
+class TestEstimatedLabelling:
+    def test_a_row_priced_by_the_estimate_serializes_the_flag(self, cfg):
+        """What the page reads to decide whether to print `est.`."""
+        from cfb_edge.edges import evaluate_market
+        from cfb_edge.halfpoint import estimated_table
+        from cfb_edge.models import Outcome
+        from cfb_edge.web.service import serialize_row
+
+        from conftest import make_game
+
+        game = make_game({
+            "draftkings": {"totals": [Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)]},
+            "pinnacle": {"totals": [Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)]},
+        })
+        row = evaluate_market(game, "totals", cfg, estimated_table(cfg))[0]
+        data = serialize_row(row)
+        assert data["translated"] is True
+        assert data["estimated"] is True
+        assert data["line_diff"] == pytest.approx(1.5)
+
+    def test_nothing_is_left_flagged_as_a_different_number(self, web_cfg, tmp_path):
+        import asyncio
+
+        web_cfg.halfpoint_table_path = tmp_path / "no-table.json"
+        dash = make_dashboard(web_cfg)
+        asyncio.run(dash.refresh())
+        assert dash.state.flagged_different_number == 0
+        assert dash.state.priced_from_estimate == 2
+
+    def test_a_built_table_is_not_labelled_an_estimate(self, web_cfg, tmp_path, halfpoint_table):
+        import asyncio
+
+        from cfb_edge.halfpoint import save_table
+
+        web_cfg.halfpoint_table_path = save_table(halfpoint_table, tmp_path / "hp.json")
+        dash = make_dashboard(web_cfg)
+        asyncio.run(dash.refresh())
+        moved = next(r for r in dash.state.rows if r["pick"] == "Over 51.5")
+        assert moved["translated"] is True
+        assert moved["estimated"] is False
+        assert dash.state.priced_from_estimate == 0
+
+    def test_the_slate_marks_estimated_cells(self, web_cfg, tmp_path):
+        import asyncio
+
+        web_cfg.halfpoint_table_path = tmp_path / "no-table.json"
+        dash = make_dashboard(web_cfg)
+        asyncio.run(dash.refresh())
+        games = [g for day in dash.state.slate for g in day["games"]]
+        alabama = next(g for g in games if g["event_id"] == "g1alabama")
+        assert alabama["sides"][0]["total"]["estimated"] is True
+        assert alabama["sides"][0]["spread"]["estimated"] is False
+
+    def test_the_page_renders_the_label(self, signed_in):
+        body = signed_in.get("/").text
+        assert 'row.estimated ? "est."' in body
+        assert "est-mark" in body

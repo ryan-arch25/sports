@@ -39,8 +39,26 @@ class TestRun:
         body = out.split("EDGE")[1]
         assert body.index("Michigan Wolverines +6.5") < body.index("Georgia Bulldogs ML")
 
-    def test_flags_the_different_number_section(self, tmp_path, capsys):
-        run(tmp_path)
+    def test_a_different_number_is_priced_by_default(self, tmp_path, capsys):
+        """The published estimate means these lines are no longer skipped.
+
+        Priced is not the same as bettable: with the estimate's adjustment
+        these two land just short of the threshold, which is a verdict rather
+        than a gap.
+        """
+        run(tmp_path, min_edge="0")
+        out = capsys.readouterr().out
+        assert "Different number" not in out
+        assert "2 priced through the half-point table" in out
+        assert "0 on a different number" in out
+
+    def test_the_flagged_section_returns_when_the_fallback_is_off(self, tmp_path, capsys):
+        config = tmp_path / "config.toml"
+        config.write_text('[halfpoint]\nfallback = "none"\n', encoding="utf-8")
+        assert main([
+            "scan", "--config", str(config), "--cache-file", FIXTURE,
+            "--no-files", "--no-db", "--no-color",
+        ]) == 0
         out = capsys.readouterr().out
         assert "Different number" in out
         assert "Under 51.5" in out
@@ -104,9 +122,9 @@ class TestOutputFiles:
         assert len(rows) == 20
         assert rows[0]["status"] == "priced"
         assert rows[0]["above_min_edge"] == "True"
-        assert {r["status"] for r in rows} == {
-            "priced", "different_number", "no_sharp_line"
-        }
+        assert {r["status"] for r in rows} == {"priced", "translated", "no_sharp_line"}
+        estimated = [r for r in rows if r["status"] == "translated"]
+        assert estimated and all(r["translation_source"] == "estimated" for r in estimated)
 
     def test_csv_kickoff_is_eastern(self, tmp_path, capsys):
         run(tmp_path)
@@ -327,8 +345,19 @@ class TestSubcommands:
             main([command])
         assert "usage" in capsys.readouterr().out.lower()
 
-    def test_halfpoint_show_without_a_table(self, tmp_path, capsys):
-        assert main(["halfpoint", "show", "--table", str(tmp_path / "none.json")]) == 1
+    def test_halfpoint_show_falls_back_to_the_estimate(self, tmp_path, capsys):
+        assert main(["halfpoint", "show", "--table", str(tmp_path / "none.json")]) == 0
+        out = capsys.readouterr().out
+        assert "published estimate, not measured" in out
+        assert "0.5 pts of win probability per half point" in out
+
+    def test_halfpoint_show_without_a_table_or_a_fallback(self, tmp_path, capsys):
+        config = tmp_path / "config.toml"
+        config.write_text('[halfpoint]\nfallback = "none"\n', encoding="utf-8")
+        assert main([
+            "halfpoint", "show", "--config", str(config),
+            "--table", str(tmp_path / "none.json"),
+        ]) == 1
         assert "no half-point table" in capsys.readouterr().err
 
     def test_halfpoint_build_without_results(self, tmp_path, capsys, monkeypatch):
@@ -482,7 +511,12 @@ class TestLineDiffColumn:
         assert over["line_diff"] == 1.5
 
     def test_the_flagged_section_shows_it_too(self, tmp_path, capsys):
-        run(tmp_path)
+        config = tmp_path / "config.toml"
+        config.write_text('[halfpoint]\nfallback = "none"\n', encoding="utf-8")
+        main([
+            "scan", "--config", str(config), "--cache-file", FIXTURE,
+            "--no-files", "--no-db", "--no-color",
+        ])
         out = capsys.readouterr().out
         flagged = out.split("Different number")[1]
         assert "LINE DIFF" in flagged

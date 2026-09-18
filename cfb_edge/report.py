@@ -22,7 +22,7 @@ CSV_COLUMNS = [
     "away_team", "home_team", "market", "market_label", "side", "pick", "dk_point",
     "dk_price", "dk_prob", "sharp_source", "sharp_books", "sharp_point", "sharp_price",
     "sharp_hold", "line_diff", "fair_prob", "fair_american", "edge_pct", "ev_per_100",
-    "stake", "status", "above_min_edge", "translated_from", "note",
+    "stake", "status", "above_min_edge", "translated_from", "translation_source", "note",
 ]
 
 STATUS_ORDER = {PRICED: 0, TRANSLATED: 1, DIFFERENT_NUMBER: 2}
@@ -100,7 +100,8 @@ def _sharp_cell(row: EdgeRow) -> str:
     """Sharp price, plus the sharp's own number when DK is not on it."""
     price = format_american(row.sharp_price)
     if row.status == TRANSLATED and row.sharp_point is not None:
-        return f"{price} @{row.sharp_point:g} ({row.sharp_source})"
+        source = f"{row.sharp_source} est" if row.is_estimated else row.sharp_source
+        return f"{price} @{row.sharp_point:g} ({source})"
     return f"{price} ({row.sharp_source})"
 
 

@@ -349,3 +349,85 @@ class TestLineDiffOnRows:
         # 249.5 yards instead of 251.5 is two yards in the Over's favour.
         assert rows["QB One Over"].line_diff == pytest.approx(2.0)
         assert rows["QB One Under"].line_diff == pytest.approx(-2.0)
+
+
+class TestEstimatedPricing:
+    """Lines off the sharp number get priced even with no table built."""
+
+    def moved_total(self):
+        return two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+
+    def test_the_estimate_prices_what_would_otherwise_be_skipped(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        rows = evaluate_market(self.moved_total(), "totals", cfg, estimated_table(cfg))
+        assert {r.status for r in rows} == {TRANSLATED}
+        assert all(r.is_estimated for r in rows)
+        assert all(r.translation_source == "estimated" for r in rows)
+
+    def test_the_move_matches_the_published_value(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        rows = {r.side: r for r in evaluate_market(
+            self.moved_total(), "totals", cfg, estimated_table(cfg)
+        )}
+        # Pinnacle -105/-105 is a coin flip; three half points at 0.4 each.
+        assert rows["Over"].fair_prob == pytest.approx(0.512)
+        assert rows["Under"].fair_prob == pytest.approx(0.488)
+
+    def test_the_note_says_where_the_price_came_from(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        row = evaluate_market(self.moved_total(), "totals", cfg, estimated_table(cfg))[0]
+        assert "published half-point estimate" in row.note
+
+    def test_a_built_table_wins_when_both_are_available(self, cfg, halfpoint_table):
+        from cfb_edge.halfpoint import estimated_table
+
+        rows = evaluate_market(
+            self.moved_total(), "totals", cfg, [halfpoint_table, estimated_table(cfg)]
+        )
+        assert all(r.translation_source == "table" for r in rows)
+        assert not any(r.is_estimated for r in rows)
+
+    def test_the_estimate_catches_what_the_built_table_refuses(self, cfg):
+        """A reference line with no sample still gets priced."""
+        from cfb_edge.halfpoint import HalfPointTable, estimated_table
+
+        thin = HalfPointTable(totals={}, min_sample=200)
+        rows = evaluate_market(self.moved_total(), "totals", cfg, [thin, estimated_table(cfg)])
+        assert all(r.translation_source == "estimated" for r in rows)
+
+    def test_both_guards_still_apply(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        far = two_book_game(
+            dk=[Outcome("Over", -110, 44.0), Outcome("Under", -110, 44.0)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = evaluate_market(far, "totals", cfg, estimated_table(cfg))
+        assert {r.status for r in rows} == {DIFFERENT_NUMBER}
+        assert all(r.translation_source is None for r in rows)
+
+    def test_a_priced_row_is_never_marked_estimated(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        rows = evaluate_market(game, "totals", cfg, estimated_table(cfg))
+        assert {r.status for r in rows} == {PRICED}
+        assert not any(r.is_estimated for r in rows)
+
+    def test_the_line_diff_still_reads_the_same(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        rows = {r.side: r for r in evaluate_market(
+            self.moved_total(), "totals", cfg, estimated_table(cfg)
+        )}
+        assert rows["Over"].line_diff == pytest.approx(1.5)
+        assert rows["Under"].line_diff == pytest.approx(-1.5)

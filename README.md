@@ -177,7 +177,39 @@ DraftKings is often a half point or a point off the sharp number: DK Under 51.5
 against Pinnacle's 53. Comparing those prices directly is wrong, and guessing
 what the difference is worth is worse. So the tool measures it.
 
-**Nothing ships prebuilt** — the table is built from results you download:
+### The published fallback
+
+A table built from results is the good version, but it needs the CollegeFootballData
+fetch, which a deployed container cannot run. So when no table is present the
+scan falls back to a **published half-point chart** rather than skipping those
+lines:
+
+| | |
+| --- | --- |
+| Spread, ordinary half point | 0.5 points of win probability |
+| Spread, half point touching 3 or 7 | doubled, so 1.0 |
+| Total, half point | 0.4 points, quoted for totals between 45 and 60 |
+
+Every line priced this way is labelled **`est.`** — an amber pill in the Edges
+table, a small `est.` in the Slate's DraftKings cells, `translation_source =
+estimated` in the CSV and JSON, and `est` beside the book name in the terminal.
+The run summary counts them separately, so a scan says how many of its prices
+came from real results and how many from the chart.
+
+A built table always wins per line, and the estimate only catches what it
+refuses — so building the real thing never costs coverage. Turn the fallback
+off with `[halfpoint] fallback = "none"` to go back to flagging.
+
+> **These values look low.** A normal approximation with the usual spreads
+> (σ ≈ 13.5 points on margins, ≈ 10.5 on totals) puts an ordinary half point
+> nearer **1.5** points of win probability on a spread and **1.9** on a total,
+> and a distribution built from real games agrees with that within noise. The
+> supplied figures are roughly a third of it, and off the key numbers about a
+> quarter. Under-adjusting is not symmetric: a line on a *worse* number gets
+> under-penalised, which can leave a bet looking +EV when it is not. All five
+> numbers are config keys — raise them in `config.toml` without touching code.
+
+**The measured version.** The table is built from results you download:
 
 ```bash
 cfb-edge scores fetch --seasons 2015-2024   # needs CFBD_API_KEY
@@ -562,9 +594,9 @@ that fetch does not run inside the web container. Two ways to get it there:
   table from ten seasons is a hundred kilobytes or so, which is a reasonable
   thing to commit.
 
-Without a table the dashboard still works — lines off the sharp number are
-flagged rather than priced, exactly as they were before the table existed, and
-the line diff column still shows the gap.
+Without a table the dashboard still prices those lines, from the published
+chart described above, and labels them `est.`. Putting a built table on the
+volume upgrades them in place — same rows, better numbers, no `est.`.
 
 Keep `numReplicas = 1`: each replica runs its own scan schedule, so two replicas
 means two sets of API requests against one quota.
@@ -588,7 +620,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-555 tests, no network access required. The odds conversion and de-vig math are
+595 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -619,6 +651,10 @@ can be exercised deterministically — it is scaffolding, not data.
 - The half-point table is an empirical model with the assumptions listed above,
   built from whatever seasons you downloaded. It narrows the gap on a
   half-point difference; it does not close it.
+- The published fallback is weaker still: a flat value per half point with no
+  distribution behind it, and with default figures that look about three times
+  too small (see the note above). Rows priced from it carry `est.` precisely so
+  they can be discounted.
 - Props are priced with the same machinery as game markets, but sharp coverage
   is thinner and DK's prop hold is much larger, so edges there need more
   scepticism, not less.

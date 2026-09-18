@@ -192,7 +192,7 @@ def clv_rows(
     init_db(conn)
     from cfb_edge.scan import load_halfpoint
 
-    table, _, _ = load_halfpoint(cfg)
+    tables, _, _ = load_halfpoint(cfg)
     now = _iso(datetime.now(timezone.utc))
     sql = "SELECT * FROM bets"
     params: tuple = ()
@@ -224,7 +224,7 @@ def clv_rows(
                     if bet["point"] is not None
                     else "the number moved"
                 )
-                adjusted = _adjust_for_number(table, bet, close, close_prob)
+                adjusted = _adjust_for_number(tables, bet, close, close_prob)
             if bet["book"] and bet["book"] != "draftkings":
                 note = (note + "; " if note else "") + f"priced against DK close, bet at {bet['book']}"
         rows.append(ClvRow(
@@ -239,9 +239,12 @@ def clv_rows(
     return rows
 
 
-def _adjust_for_number(table, bet: sqlite3.Row, close: sqlite3.Row, close_prob: float) -> float | None:
+def _adjust_for_number(tables, bet: sqlite3.Row, close: sqlite3.Row, close_prob: float) -> float | None:
     """Move the closing price onto the number you actually bet, when possible."""
-    if table is None or bet["point"] is None or close["dk_point"] is None:
+    from cfb_edge.edges import as_tables
+
+    tables = as_tables(tables)
+    if not tables or bet["point"] is None or close["dk_point"] is None:
         return None
     from cfb_edge.halfpoint import market_kind, side_role
 
@@ -251,9 +254,13 @@ def _adjust_for_number(table, bet: sqlite3.Row, close: sqlite3.Row, close_prob: 
     role = side_role(kind, bet["side"], close["dk_point"])
     if role is None:
         return None
-    moved = table.translate(
-        kind, role, close_prob, float(close["dk_point"]), float(bet["point"])
-    )
+    moved = None
+    for table in tables:
+        moved = table.translate(
+            kind, role, close_prob, float(close["dk_point"]), float(bet["point"])
+        )
+        if moved is not None:
+            break
     if moved is None:
         return None
     try:

@@ -68,6 +68,25 @@ window = 1.5
 # A reference line with fewer games than this is not trusted to price anything.
 min_sample = 200
 
+# What to do about a line off the sharp number when no table has been built.
+#   estimated - price it from the published chart below and label it "est."
+#   none      - leave it flagged and unpriced
+fallback = "estimated"
+
+# The published chart. These are not measured from anything: they are the
+# standard shape of a half-point chart, in points of win probability per half
+# point. A table built from real results replaces them per line.
+#
+# NOTE: both figures look low. A normal approximation (sigma about 13.5 on
+# spreads, 10.5 on totals) puts an ordinary half point nearer 1.5 points of win
+# probability on a spread and 1.9 on a total, and a distribution built from
+# real games agrees. Raise these if you want the adjustment to match.
+estimate_spread_half_point = 0.5
+estimate_spread_key_numbers = [3, 7]
+estimate_key_multiplier = 2.0
+estimate_total_half_point = 0.4
+estimate_total_range = [45, 60]
+
 # Which CollegeFootballData line providers to prefer, best first. Anything
 # not listed falls back to the median across providers.
 line_providers = ["Bovada", "DraftKings", "ESPN Bet", "consensus"]

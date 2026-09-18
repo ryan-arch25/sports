@@ -94,18 +94,24 @@ class ScanResult:
 
 
 def load_halfpoint(cfg: Config):
-    """The half-point table, if it has been built and is switched on."""
-    if not cfg.halfpoint_enabled:
-        return None, None, None
-    from cfb_edge.halfpoint import HalfPointError, load_table
+    """Tables a scan can price different numbers with, best first.
 
-    try:
-        table = load_table(cfg.halfpoint_table_path)
-    except HalfPointError as exc:
-        return None, None, f"half-point table ignored: {exc}"
-    if table is None or table.is_empty():
-        return None, None, None
-    return table, str(cfg.halfpoint_table_path), None
+    Returns (tables, description, warning). The description names what is
+    actually in play so a run can say whether it priced off real results or the
+    published estimate.
+    """
+    from cfb_edge.halfpoint import resolve_tables
+
+    tables, warnings = resolve_tables(cfg)
+    if not tables:
+        return [], None, warnings[0] if warnings else None
+    names = []
+    for table in tables:
+        names.append(
+            "published estimate" if getattr(table, "is_estimate", False)
+            else str(cfg.halfpoint_table_path)
+        )
+    return tables, ", ".join(names), warnings[0] if warnings else None
 
 
 def run_scan(cfg: Config, options: ScanOptions) -> ScanResult:

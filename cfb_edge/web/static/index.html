@@ -133,6 +133,8 @@
     font-size: 11px; font-weight: 600; color: var(--accent);
     background: var(--accent-soft); border: 1px solid var(--accent);
   }
+  .pill.est { color: var(--warn); background: none; border-color: var(--warn); }
+  .odds .est-mark { font-size: 10px; font-weight: 600; color: var(--warn); margin-left: 3px; }
   .sub { color: var(--muted); font-size: 12px; }
   .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
   footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -361,6 +363,13 @@
       priceLine.textContent = price;
       td.appendChild(priceLine);
     }
+    if (isDk && cell.estimated) {
+      var mark = document.createElement("span");
+      mark.className = "est-mark";
+      mark.textContent = "est.";
+      mark.title = "priced from the published half-point estimate";
+      td.appendChild(mark);
+    }
     if (isDk && cell.edge_pct !== null && cell.edge_pct > 0) {
       var edge = document.createElement("span");
       edge.className = "edge";
@@ -547,8 +556,8 @@
       var pick = cell(tr, row.pick, "pick", "Pick");
       if (row.translated) {
         var pill = document.createElement("span");
-        pill.className = "pill";
-        pill.textContent = "½pt";
+        pill.className = "pill" + (row.estimated ? " est" : "");
+        pill.textContent = row.estimated ? "est." : "½pt";
         pill.title = row.note || "priced through the half-point table";
         pick.appendChild(pill);
       }
@@ -601,6 +610,10 @@
     bits.push("Rescans every " + meta.refresh_minutes + " min");
     bits.push("bankroll $" + Math.round(meta.bankroll).toLocaleString() +
               " at " + meta.kelly_fraction + "× Kelly");
+    if (meta.priced_from_estimate) {
+      bits.push(meta.priced_from_estimate +
+                " line(s) on a different number priced from the published estimate (est.)");
+    }
     if (meta.flagged_different_number) {
       bits.push(meta.flagged_different_number +
                 " line(s) on a number the sharp book does not have, not priced");

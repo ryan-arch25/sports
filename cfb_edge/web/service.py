@@ -61,6 +61,7 @@ def serialize_row(row: EdgeRow) -> dict[str, Any]:
         "stake": None if row.stake is None else round(row.stake, 2),
         "status": row.status,
         "translated": row.status == TRANSLATED,
+        "estimated": row.is_estimated,
         "note": row.note,
     }
 
@@ -79,6 +80,7 @@ class DashboardState:
     odds_source: str | None = None
     games: int = 0
     flagged_different_number: int = 0
+    priced_from_estimate: int = 0
     quota_remaining: str | None = None
     bankroll: float = 0.0
     kelly_fraction: float = 0.25
@@ -106,6 +108,7 @@ class DashboardState:
                 "odds_source": self.odds_source,
                 "games": self.games,
                 "flagged_different_number": self.flagged_different_number,
+                "priced_from_estimate": self.priced_from_estimate,
                 "quota_remaining": self.quota_remaining,
                 "bankroll": self.bankroll,
                 "kelly_fraction": self.kelly_fraction,
@@ -247,6 +250,7 @@ class Dashboard:
         self.state.odds_source = result.source
         self.state.games = len(result.games)
         self.state.flagged_different_number = result.status_counts.get("different_number", 0)
+        self.state.priced_from_estimate = sum(1 for row in result.rows if row.is_estimated)
         self.state.quota_remaining = result.snapshot.quota.get("remaining")
         self.state.bankroll = self.cfg.bankroll
         self.state.kelly_fraction = self.cfg.kelly_fraction

@@ -456,11 +456,16 @@ def _print_report(cfg: Config, args: argparse.Namespace, result: ScanResult, col
         if status in STATUS_NOTES
     ]
     translated = counts.get(TRANSLATED, 0)
+    estimated = sum(1 for row in result.rows if row.is_estimated)
     print()
     print(
         "evaluated "
         f"{counts.get(PRICED, 0)} priced line(s)"
-        + (f", {translated} priced through the half-point table" if translated else "")
+        + (
+            f", {translated} priced through the half-point table"
+            + (f" ({estimated} from the published estimate)" if estimated else "")
+            if translated else ""
+        )
         + f", {counts.get(DIFFERENT_NUMBER, 0)} on a different number"
         + (", " + ", ".join(skipped) if skipped else "")
     )
