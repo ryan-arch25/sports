@@ -43,7 +43,30 @@ class Config:
     cache_dir: Path = Path("data/cache")
     out_dir: Path = Path("data/runs")
     db_path: Path = Path("data/cfb_edge.sqlite")
+    scores_db_path: Path = Path("data/scores.sqlite")
+    halfpoint_table_path: Path = Path("data/halfpoint.json")
     cache_max_age_minutes: float = 15.0
+    # half-point table
+    halfpoint_enabled: bool = True
+    halfpoint_window: float = 1.5
+    halfpoint_min_sample: int = 200
+    line_providers: tuple[str, ...] = ("Bovada", "DraftKings", "ESPN Bet", "consensus")
+    # props and alternate lines (one API request per game, so opt-in)
+    prop_markets: tuple[str, ...] = (
+        "player_pass_yds", "player_pass_tds", "player_rush_yds",
+        "player_reception_yds", "player_receptions", "player_anytime_td",
+    )
+    alt_markets: tuple[str, ...] = ("alternate_spreads", "alternate_totals")
+    props_window_hours: float = 24.0
+    props_max_events: int = 25
+    props_confirm_threshold: int = 10
+    # watch mode
+    watch_interval_minutes: float = 15.0
+    watch_edge_delta: float = 0.25
+    # discord notifications
+    discord_webhook_url: str | None = None
+    discord_min_edge: float = 2.0
+    discord_username: str = "cfb-edge"
     aliases: dict[str, list[str]] = field(default_factory=lambda: dict(DEFAULT_ALIASES))
     api_key: str | None = None
     source_path: Path | None = None
@@ -170,11 +193,56 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
     if "db_path" in paths:
         cfg.db_path = _as_path(paths["db_path"], base)
 
+    if "scores_db" in paths:
+        cfg.scores_db_path = _as_path(paths["scores_db"], base)
+    if "halfpoint_table" in paths:
+        cfg.halfpoint_table_path = _as_path(paths["halfpoint_table"], base)
+
     cache = data.get("cache") or {}
     if "max_age_minutes" in cache:
         cfg.cache_max_age_minutes = float(cache["max_age_minutes"])
 
+    halfpoint = data.get("halfpoint") or {}
+    if "enabled" in halfpoint:
+        cfg.halfpoint_enabled = bool(halfpoint["enabled"])
+    if "window" in halfpoint:
+        cfg.halfpoint_window = float(halfpoint["window"])
+    if "min_sample" in halfpoint:
+        cfg.halfpoint_min_sample = int(halfpoint["min_sample"])
+    if "line_providers" in halfpoint:
+        cfg.line_providers = tuple(str(p) for p in halfpoint["line_providers"])
+
+    props = data.get("props") or {}
+    if "markets" in props:
+        cfg.prop_markets = tuple(str(m) for m in props["markets"])
+    if "alt_markets" in props:
+        cfg.alt_markets = tuple(str(m) for m in props["alt_markets"])
+    if "window_hours" in props:
+        cfg.props_window_hours = float(props["window_hours"])
+    if "max_events" in props:
+        cfg.props_max_events = int(props["max_events"])
+    if "confirm_threshold" in props:
+        cfg.props_confirm_threshold = int(props["confirm_threshold"])
+
+    watch = data.get("watch") or {}
+    if "interval_minutes" in watch:
+        cfg.watch_interval_minutes = float(watch["interval_minutes"])
+    if "edge_delta" in watch:
+        cfg.watch_edge_delta = float(watch["edge_delta"])
+
+    discord = data.get("discord") or {}
+    if "webhook_url" in discord:
+        cfg.discord_webhook_url = str(discord["webhook_url"]) or None
+    if "min_edge" in discord:
+        cfg.discord_min_edge = float(discord["min_edge"])
+    if "username" in discord:
+        cfg.discord_username = str(discord["username"])
+
     cfg.api_key = os.environ.get("ODDS_API_KEY") or None
+    # The webhook URL is a secret, so the environment wins over the config file.
+    cfg.discord_webhook_url = (
+        os.environ.get("DISCORD_WEBHOOK_URL") or cfg.discord_webhook_url or None
+    )
 
     if cfg.kelly_fraction <= 0:
         raise ConfigError("kelly_fraction must be > 0")

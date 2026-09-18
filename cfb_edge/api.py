@@ -36,6 +36,53 @@ def request_params(cfg: Config, markets: tuple[str, ...]) -> dict[str, Any]:
     }
 
 
+def event_request_params(cfg: Config, markets: tuple[str, ...]) -> dict[str, Any]:
+    params = request_params(cfg, markets)
+    params["markets"] = ",".join(markets)
+    return params
+
+
+def fetch_event_odds(
+    cfg: Config, event_id: str, markets: tuple[str, ...], timeout: float = 30.0
+) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
+    """Odds for one event, which is the only way to get props and alt lines."""
+    if not cfg.api_key:
+        raise OddsApiError("ODDS_API_KEY is not set; cannot request per-event odds.")
+    params = event_request_params(cfg, markets)
+    url = f"{BASE_URL}/sports/{cfg.sport}/events/{event_id}/odds"
+    try:
+        response = requests.get(url, params={**params, "apiKey": cfg.api_key}, timeout=timeout)
+    except requests.RequestException as exc:
+        raise OddsApiError(f"request to The Odds API failed: {exc}") from exc
+
+    if response.status_code == 404:
+        # The event has no book offering these markets yet.
+        return {}, {}, params
+    if response.status_code == 422:
+        raise OddsApiError(
+            f"422 from The Odds API for event {event_id} "
+            f"(unsupported market?): {response.text[:200]}"
+        )
+    if response.status_code == 429:
+        raise OddsApiError("429 from The Odds API: request quota exhausted.")
+    if not response.ok:
+        raise OddsApiError(f"{response.status_code} from The Odds API: {response.text[:200]}")
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise OddsApiError(f"The Odds API returned invalid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise OddsApiError(f"expected an event object, got {type(data).__name__}")
+
+    quota = {
+        label: response.headers[header]
+        for header, label in QUOTA_HEADERS.items()
+        if header in response.headers
+    }
+    return data, quota, params
+
+
 def fetch_odds(
     cfg: Config, markets: tuple[str, ...], timeout: float = 30.0
 ) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, Any]]:

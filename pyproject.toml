@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cfb-edge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Find +EV DraftKings college football bets against a sharp-book fair line."
 readme = "README.md"
 requires-python = ">=3.11"

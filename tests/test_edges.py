@@ -6,6 +6,7 @@ import pytest
 
 from cfb_edge.edges import (
     DIFFERENT_NUMBER,
+    TRANSLATED,
     NO_SHARP_LINE,
     NO_SHARP_SIDE,
     PRICED,
@@ -183,3 +184,99 @@ class TestPickLabels:
     )
     def test_format_pick(self, market, side, point, expected):
         assert format_pick(market, side, point) == expected
+
+
+class TestTranslatedNumbers:
+    """With a half-point table, a different number is priced instead of skipped."""
+
+    def test_a_total_off_the_sharp_number_is_priced(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = evaluate_market(game, "totals", cfg, halfpoint_table)
+        assert {r.status for r in rows} == {TRANSLATED}
+        over = next(r for r in rows if r.side == "Over")
+        assert over.fair_prob > 0.5  # a lower total is a better Over
+        assert over.edge is not None and over.stake is not None
+        assert over.translated_from == 53.0
+        assert over.sharp_point == 53.0 and over.dk_point == 51.5
+
+    def test_the_two_sides_move_in_opposite_directions(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = {r.side: r for r in evaluate_market(game, "totals", cfg, halfpoint_table)}
+        assert rows["Over"].fair_prob > 0.5 > rows["Under"].fair_prob
+        assert rows["Over"].fair_prob + rows["Under"].fair_prob == pytest.approx(1.0)
+
+    def test_the_note_records_the_move(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        over = next(r for r in evaluate_market(game, "totals", cfg, halfpoint_table)
+                    if r.side == "Over")
+        assert "half-point table" in over.note
+        assert "53" in over.note and "51.5" in over.note
+
+    def test_a_spread_off_the_sharp_number_is_priced(self, cfg, halfpoint_table):
+        game = two_book_game(
+            market="spreads",
+            dk=[Outcome("Home Team", -110, -2.5), Outcome("Away Team", -110, 2.5)],
+            sharp=[Outcome("Home Team", -110, -3.0), Outcome("Away Team", -110, 3.0)],
+        )
+        rows = {r.side: r for r in evaluate_market(game, "spreads", cfg, halfpoint_table)}
+        assert rows["Home Team"].status == TRANSLATED
+        assert rows["Home Team"].fair_prob > 0.5  # -2.5 is better than -3
+        assert rows["Away Team"].fair_prob < 0.5
+
+    def test_translated_rows_are_ranked_with_the_rest(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = evaluate_market(game, "totals", cfg, halfpoint_table)
+        assert len(rank(rows, 1.0)) == 1
+        assert different_number_rows(rows) == []
+
+    def test_a_move_beyond_the_guard_is_still_flagged(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 44.0), Outcome("Under", -110, 44.0)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        assert {r.status for r in evaluate_market(game, "totals", cfg, halfpoint_table)} == {
+            DIFFERENT_NUMBER
+        }
+
+    def test_moneylines_are_never_translated(self, cfg, halfpoint_table):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Away Team", 145), Outcome("Home Team", -175)]},
+            "pinnacle": {"h2h": [Outcome("Away Team", 130), Outcome("Home Team", -145)]},
+        })
+        assert {r.status for r in evaluate_market(game, "h2h", cfg, halfpoint_table)} == {PRICED}
+
+    def test_a_prop_on_a_different_number_is_not_translated(self, cfg, halfpoint_table):
+        """The table describes game margins and totals, not passing yards."""
+        game = make_game({
+            "draftkings": {"player_pass_yds": [
+                Outcome("Over", -110, 249.5, "QB One"),
+                Outcome("Under", -110, 249.5, "QB One"),
+            ]},
+            "pinnacle": {"player_pass_yds": [
+                Outcome("Over", -105, 251.5, "QB One"),
+                Outcome("Under", -105, 251.5, "QB One"),
+            ]},
+        })
+        rows = evaluate_market(game, "player_pass_yds", cfg, halfpoint_table)
+        assert {r.status for r in rows} == {DIFFERENT_NUMBER}
+
+    def test_without_a_table_nothing_is_translated(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        assert {r.status for r in evaluate_market(game, "totals", cfg, None)} == {
+            DIFFERENT_NUMBER
+        }

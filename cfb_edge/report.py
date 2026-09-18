@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Sequence
 from zoneinfo import ZoneInfo
 
-from cfb_edge.edges import DIFFERENT_NUMBER, PRICED, EdgeRow, format_pick
+from cfb_edge.edges import DIFFERENT_NUMBER, PRICED, TRANSLATED, EdgeRow, format_pick
 from cfb_edge.oddsmath import format_american
 
 ET = ZoneInfo("America/New_York")
@@ -22,10 +22,10 @@ CSV_COLUMNS = [
     "away_team", "home_team", "market", "market_label", "side", "pick", "dk_point",
     "dk_price", "dk_prob", "sharp_source", "sharp_books", "sharp_point", "sharp_price",
     "sharp_hold", "fair_prob", "fair_american", "edge_pct", "ev_per_100", "stake",
-    "status", "above_min_edge", "note",
+    "status", "above_min_edge", "translated_from", "note",
 ]
 
-STATUS_ORDER = {PRICED: 0, DIFFERENT_NUMBER: 1}
+STATUS_ORDER = {PRICED: 0, TRANSLATED: 1, DIFFERENT_NUMBER: 2}
 
 
 def kickoff_et(dt: datetime) -> str:
@@ -89,6 +89,14 @@ def render_table(headers: Sequence[Column], rows: Sequence[Sequence[str]]) -> st
     return "\n".join(lines)
 
 
+def _sharp_cell(row: EdgeRow) -> str:
+    """Sharp price, plus the sharp's own number when DK is not on it."""
+    price = format_american(row.sharp_price)
+    if row.status == TRANSLATED and row.sharp_point is not None:
+        return f"{price} @{row.sharp_point:g} ({row.sharp_source})"
+    return f"{price} ({row.sharp_source})"
+
+
 def edge_table(rows: Sequence[EdgeRow], color: bool = False, game_width: int = 32) -> str:
     headers = [
         Column("GAME"), Column("KICKOFF (ET)"), Column("MARKET"), Column("PICK"),
@@ -105,7 +113,7 @@ def edge_table(rows: Sequence[EdgeRow], color: bool = False, game_width: int = 3
             row.market_label,
             _truncate(row.pick, 26),
             format_american(row.dk_price),
-            f"{format_american(row.sharp_price)} ({row.sharp_source})",
+            _sharp_cell(row),
             _pct(row.fair_prob),
             _pct(row.dk_prob),
             _colorize(edge_text, "green", color),
@@ -136,8 +144,8 @@ def different_number_table(rows: Sequence[EdgeRow], color: bool = False, game_wi
 
 def _sort_key(row: EdgeRow) -> tuple:
     return (
-        STATUS_ORDER.get(row.status, 2),
-        -(row.edge or -99.0) if row.status == PRICED else 0.0,
+        STATUS_ORDER.get(row.status, 3),
+        -(row.edge or -99.0) if row.is_bet else 0.0,
         row.commence_time,
         row.matchup,
         row.market,
@@ -153,7 +161,7 @@ def row_record(row: EdgeRow, run_id: str, fetched_at: str, min_edge_pct: float) 
         commence_time_utc=data.pop("commence_time"),
         kickoff_et=kickoff_et(row.commence_time),
         above_min_edge=bool(
-            row.status == PRICED and row.edge is not None and row.edge * 100 >= min_edge_pct
+            row.is_bet and row.edge is not None and row.edge * 100 >= min_edge_pct
         ),
     )
     return data
@@ -192,3 +200,31 @@ def write_json(
     }
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     return path
+
+
+def change_table(changes: Sequence[Any], color: bool = False, game_width: int = 28) -> str:
+    """The --watch delta view: what moved since the last scan."""
+    headers = [
+        Column("CHANGE"), Column("GAME"), Column("KICKOFF (ET)"), Column("MARKET"),
+        Column("PICK"), Column("DK", "right"), Column("SHARP", "right"),
+        Column("FAIR%", "right"), Column("EDGE", "right"), Column("EV/$100", "right"),
+        Column("STAKE", "right"),
+    ]
+    tint = {"new": "green", "dropped": "dim", "number": "yellow"}
+    body = []
+    for change in changes:
+        row = change.row
+        body.append([
+            _colorize(change.description, tint.get(change.kind, "bold"), color),
+            _truncate(row.matchup, game_width),
+            kickoff_et(row.commence_time),
+            row.market_label,
+            _truncate(row.pick, 24),
+            format_american(row.dk_price),
+            _sharp_cell(row),
+            _pct(row.fair_prob),
+            _pct(row.edge),
+            _money(row.ev_per_100),
+            f"${row.stake:,.2f}" if row.stake is not None else "-",
+        ])
+    return render_table(headers, body)

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from cfb_edge.config import Config
-from cfb_edge.fair import FairLine, fair_line, resolve_book
-from cfb_edge.models import MARKET_LABELS, Game
+from cfb_edge.fair import FairLine, fair_lines, resolve_book
+from cfb_edge.models import Game, market_label
 from cfb_edge.oddsmath import (
     OddsError,
     american_to_prob,
@@ -17,8 +17,12 @@ from cfb_edge.oddsmath import (
     prob_to_american,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - import cycle only matters for typing
+    from cfb_edge.halfpoint import HalfPointTable
+
 # Row statuses
 PRICED = "priced"
+TRANSLATED = "translated"  # DK is on another number, priced via the half-point table
 DIFFERENT_NUMBER = "different_number"
 NO_SHARP_LINE = "no_sharp_line"
 NO_SHARP_SIDE = "no_sharp_side"
@@ -47,6 +51,7 @@ class EdgeRow:
     stake: float | None
     status: str
     note: str = ""
+    translated_from: float | None = None
 
     @property
     def matchup(self) -> str:
@@ -54,7 +59,12 @@ class EdgeRow:
 
     @property
     def market_label(self) -> str:
-        return MARKET_LABELS.get(self.market, self.market)
+        return market_label(self.market)
+
+    @property
+    def is_bet(self) -> bool:
+        """A row carrying a real, comparable edge."""
+        return self.status in (PRICED, TRANSLATED)
 
     @property
     def pick(self) -> str:
@@ -117,29 +127,39 @@ def _empty_row(
     )
 
 
-def evaluate_market(game: Game, market: str, cfg: Config) -> list[EdgeRow]:
+def evaluate_market(
+    game: Game,
+    market: str,
+    cfg: Config,
+    table: "HalfPointTable | None" = None,
+) -> list[EdgeRow]:
     """One row per DraftKings side in this market."""
     dk_key = resolve_book(game, cfg.target_book, cfg.aliases)
     dk_market = game.market(dk_key, market) if dk_key else None
     if dk_market is None:
         return []
 
-    sharp = fair_line(game, market, cfg)
+    sharp_by_group = fair_lines(game, market, cfg)
     rows: list[EdgeRow] = []
     for outcome in dk_market.outcomes:
         try:
             dk_prob = american_to_prob(outcome.price)
         except OddsError:
             continue  # a price no book could post; nothing to compare
+        sharp = sharp_by_group.get(outcome.group)
         if sharp is None:
             rows.append(
                 _empty_row(
-                    game, market, outcome.name, outcome.point, outcome.price,
+                    game, market, outcome.key, outcome.point, outcome.price,
                     NO_SHARP_LINE, "no sharp or consensus line available",
                 )
             )
             continue
-        rows.append(_row_against(game, market, outcome.name, outcome.point, outcome.price, dk_prob, sharp, cfg))
+        rows.append(
+            _row_against(
+                game, market, outcome.key, outcome.point, outcome.price, dk_prob, sharp, cfg, table
+            )
+        )
     return rows
 
 
@@ -152,6 +172,7 @@ def _row_against(
     dk_prob: float,
     sharp: FairLine,
     cfg: Config,
+    table: "HalfPointTable | None" = None,
 ) -> EdgeRow:
     sharp_side = sharp.side(side)
     books = ",".join(sharp.books)
@@ -163,20 +184,34 @@ def _row_against(
         row.sharp_hold = sharp.hold
         return row
 
-    if not _same_number(dk_point, sharp_side.point):
-        row = _empty_row(
-            game, market, side, dk_point, dk_price, DIFFERENT_NUMBER,
-            f"DK {format_point(market, dk_point)} vs {sharp.label} "
-            f"{format_point(market, sharp_side.point)}",
-        )
-        row.sharp_source = sharp.label
-        row.sharp_books = books
-        row.sharp_point = sharp_side.point
-        row.sharp_price = sharp_side.price
-        row.sharp_hold = sharp.hold
-        return row
-
     fair_prob = sharp_side.fair_prob
+    status = PRICED
+    note = ""
+    translated_from = None
+
+    if not _same_number(dk_point, sharp_side.point):
+        moved = _translate(table, market, side, sharp_side.point, dk_point, fair_prob)
+        if moved is None:
+            row = _empty_row(
+                game, market, side, dk_point, dk_price, DIFFERENT_NUMBER,
+                f"DK {format_point(market, dk_point)} vs {sharp.label} "
+                f"{format_point(market, sharp_side.point)}",
+            )
+            row.sharp_source = sharp.label
+            row.sharp_books = books
+            row.sharp_point = sharp_side.point
+            row.sharp_price = sharp_side.price
+            row.sharp_hold = sharp.hold
+            return row
+        status = TRANSLATED
+        translated_from = sharp_side.point
+        note = (
+            f"half-point table moved {sharp.label} "
+            f"{format_point(market, sharp_side.point)} ({fair_prob * 100:.1f}%) to DK "
+            f"{format_point(market, dk_point)} ({moved * 100:.1f}%)"
+        )
+        fair_prob = moved
+
     return EdgeRow(
         event_id=game.event_id,
         commence_time=game.commence_time,
@@ -203,8 +238,32 @@ def _row_against(
             fraction=cfg.kelly_fraction,
             max_bet_pct=cfg.max_bet_pct,
         ),
-        status=PRICED,
+        status=status,
+        note=note,
+        translated_from=translated_from,
     )
+
+
+def _translate(
+    table: "HalfPointTable | None",
+    market: str,
+    side: str,
+    sharp_point: float | None,
+    dk_point: float | None,
+    fair_prob: float,
+) -> float | None:
+    """Fair probability at DK's number, or None if it cannot be priced."""
+    if table is None or sharp_point is None or dk_point is None:
+        return None
+    from cfb_edge.halfpoint import market_kind, side_role
+
+    kind = market_kind(market)
+    if kind is None:
+        return None
+    role = side_role(kind, side, sharp_point)
+    if role is None:
+        return None
+    return table.translate(kind, role, fair_prob, float(sharp_point), float(dk_point))
 
 
 def _same_number(a: float | None, b: float | None) -> bool:
@@ -217,12 +276,15 @@ def _same_number(a: float | None, b: float | None) -> bool:
 
 
 def evaluate_games(
-    games: Sequence[Game], cfg: Config, markets: Sequence[str]
+    games: Sequence[Game],
+    cfg: Config,
+    markets: Sequence[str],
+    table: "HalfPointTable | None" = None,
 ) -> list[EdgeRow]:
     rows: list[EdgeRow] = []
     for game in games:
         for market in markets:
-            rows.extend(evaluate_market(game, market, cfg))
+            rows.extend(evaluate_market(game, market, cfg, table))
     return rows
 
 
@@ -230,7 +292,7 @@ def rank(rows: Sequence[EdgeRow], min_edge_pct: float) -> list[EdgeRow]:
     """Priced rows at or above the edge threshold, best edge first."""
     keep = [
         r for r in rows
-        if r.status == PRICED and r.edge is not None and r.edge * 100.0 >= min_edge_pct
+        if r.is_bet and r.edge is not None and r.edge * 100.0 >= min_edge_pct
     ]
     keep.sort(key=lambda r: (-(r.edge or 0.0), r.commence_time, r.matchup))
     return keep
@@ -252,6 +314,7 @@ def summarize(rows: Sequence[EdgeRow]) -> dict[str, int]:
 __all__ = [
     "EdgeRow",
     "PRICED",
+    "TRANSLATED",
     "DIFFERENT_NUMBER",
     "NO_SHARP_LINE",
     "NO_SHARP_SIDE",

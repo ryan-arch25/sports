@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from cfb_edge.edges import PRICED, EdgeRow
+from cfb_edge.edges import EdgeRow
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -56,10 +56,46 @@ CREATE TABLE IF NOT EXISTS observations (
     stake             REAL,
     status            TEXT,
     above_min_edge    INTEGER,
+    translated_from   REAL,
     note              TEXT,
     UNIQUE (run_id, event_id, market, side, dk_point)
 );
 
+-- Bets you actually placed, logged with `cfb-edge bets add`.
+CREATE TABLE IF NOT EXISTS bets (
+    bet_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    placed_at_utc     TEXT NOT NULL,
+    event_id          TEXT NOT NULL,
+    commence_time_utc TEXT,
+    home_team         TEXT,
+    away_team         TEXT,
+    market            TEXT NOT NULL,
+    side              TEXT NOT NULL,
+    point             REAL,
+    price             REAL NOT NULL,
+    stake             REAL NOT NULL,
+    book              TEXT,
+    fair_prob         REAL,
+    edge_pct          REAL,
+    note              TEXT
+);
+
+-- One row per alert actually sent, so the same price is never announced twice.
+CREATE TABLE IF NOT EXISTS notifications (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    sent_at_utc  TEXT NOT NULL,
+    channel      TEXT NOT NULL,
+    event_id     TEXT NOT NULL,
+    market       TEXT NOT NULL,
+    side         TEXT NOT NULL,
+    line_key     TEXT NOT NULL,
+    price        REAL,
+    edge_pct     REAL,
+    run_id       TEXT,
+    UNIQUE (channel, event_id, market, side, line_key, price)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bets_event ON bets (event_id, market, side);
 CREATE INDEX IF NOT EXISTS idx_obs_event ON observations (event_id, market, side);
 CREATE INDEX IF NOT EXISTS idx_obs_kickoff ON observations (commence_time_utc);
 CREATE INDEX IF NOT EXISTS idx_obs_run ON observations (run_id);
@@ -120,8 +156,23 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns that later versions introduced, leaving older rows intact."""
+    for table, column, decl in (
+        ("observations", "translated_from", "REAL"),
+    ):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if existing and column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
+def _is_bet(row: EdgeRow, min_edge_pct: float) -> bool:
+    return bool(row.is_bet and row.edge is not None and row.edge * 100 >= min_edge_pct)
 
 
 def _iso(dt: datetime) -> str:
@@ -150,10 +201,7 @@ def log_run(
     """Insert the run header and one observation per evaluated DK line."""
     init_db(conn)
     observed_at = _iso(fetched_at)
-    n_bets = sum(
-        1 for r in rows
-        if r.status == PRICED and r.edge is not None and r.edge * 100 >= min_edge_pct
-    )
+    n_bets = sum(1 for r in rows if _is_bet(r, min_edge_pct))
     conn.execute(
         """
         INSERT OR REPLACE INTO runs (
@@ -175,8 +223,7 @@ def log_run(
             row.away_team, row.market, row.side, row.dk_point, row.dk_price, row.dk_prob,
             row.sharp_source, row.sharp_books, row.sharp_point, row.sharp_price,
             row.sharp_hold, row.fair_prob, row.fair_american, row.edge_pct, row.ev_per_100,
-            row.stake, row.status,
-            int(bool(row.status == PRICED and row.edge is not None and row.edge * 100 >= min_edge_pct)),
+            row.stake, row.status, int(_is_bet(row, min_edge_pct)), row.translated_from,
             row.note,
         ))
     conn.executemany(
@@ -185,8 +232,8 @@ def log_run(
             run_id, observed_at_utc, event_id, commence_time_utc, home_team, away_team,
             market, side, dk_point, dk_price, dk_prob, sharp_source, sharp_books,
             sharp_point, sharp_price, sharp_hold, fair_prob, fair_american, edge_pct,
-            ev_per_100, stake, status, above_min_edge, note
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ev_per_100, stake, status, above_min_edge, translated_from, note
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         payload,
     )

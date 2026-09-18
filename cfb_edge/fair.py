@@ -5,6 +5,9 @@ to Circa, and if neither is there we build a consensus out of the remaining
 books. In every case both sides' American prices are converted to implied
 probabilities and divided by their sum, which strips the vig and leaves a fair
 win probability.
+
+Markets are handled one *group* at a time. A game market is a single group; a
+player prop market is one group per player, each with its own two sides.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from statistics import fmean
 from typing import Iterable, Sequence
 
 from cfb_edge.config import Config
-from cfb_edge.models import BookMarket, Game
+from cfb_edge.models import BookMarket, Game, Outcome, outcomes_signature
 from cfb_edge.oddsmath import (
     OddsError,
     american_to_prob,
@@ -39,6 +42,7 @@ class FairLine:
     books: tuple[str, ...]  # Odds API book keys actually used
     sides: tuple[FairSide, ...]
     hold: float
+    group: str | None = None  # player name for props, None for game markets
 
     @property
     def label(self) -> str:
@@ -61,121 +65,164 @@ def resolve_book(game: Game, logical: str, aliases: dict[str, list[str]]) -> str
     return None
 
 
-def _usable(book_market: BookMarket | None) -> bool:
-    if book_market is None or not book_market.is_two_sided:
+def _usable(outcomes: Sequence[Outcome]) -> bool:
+    if len(outcomes) != 2 or len({o.key for o in outcomes}) != 2:
         return False
     try:
-        for outcome in book_market.outcomes:
+        for outcome in outcomes:
             american_to_prob(outcome.price)
     except OddsError:
         return False
     return True
 
 
-def _devig_market(book_market: BookMarket) -> tuple[list[float], float]:
-    raw = [american_to_prob(o.price) for o in book_market.outcomes]
+def _devig_outcomes(outcomes: Sequence[Outcome]) -> tuple[list[float], float]:
+    raw = [american_to_prob(o.price) for o in outcomes]
     return devig(raw), hold(raw)
+
+
+def _fair_from_outcomes(
+    book: str, market: str, outcomes: Sequence[Outcome], source: str, group: str | None = None
+) -> FairLine | None:
+    if not _usable(outcomes):
+        return None
+    fair_probs, book_hold = _devig_outcomes(outcomes)
+    sides = tuple(
+        FairSide(name=o.key, point=o.point, fair_prob=p, price=o.price)
+        for o, p in zip(outcomes, fair_probs)
+    )
+    return FairLine(
+        market=market, source=source, books=(book,), sides=sides, hold=book_hold, group=group
+    )
 
 
 def fair_from_book(book_market: BookMarket, source: str) -> FairLine | None:
     """De-vig one book's two-sided market into fair probabilities."""
-    if not _usable(book_market):
+    if book_market is None:
         return None
-    fair_probs, book_hold = _devig_market(book_market)
-    sides = tuple(
-        FairSide(name=o.name, point=o.point, fair_prob=p, price=o.price)
-        for o, p in zip(book_market.outcomes, fair_probs)
-    )
-    return FairLine(
-        market=book_market.market,
-        source=source,
-        books=(book_market.book,),
-        sides=sides,
-        hold=book_hold,
+    return _fair_from_outcomes(
+        book_market.book, book_market.market, book_market.outcomes, source
     )
 
 
-def _consensus_group(markets: Sequence[BookMarket]) -> list[BookMarket]:
+def _consensus_group(
+    quotes: Sequence[tuple[str, tuple[Outcome, ...]]]
+) -> list[tuple[str, tuple[Outcome, ...]]]:
     """Pick the set of books quoting the same number (the modal line).
 
     Ties go to the group with the lowest average hold, which is the closest
     thing to 'sharpest' among soft books.
     """
-    groups: dict[tuple, list[BookMarket]] = {}
-    for bm in markets:
-        groups.setdefault(bm.signature, []).append(bm)
+    groups: dict[tuple, list[tuple[str, tuple[Outcome, ...]]]] = {}
+    for book, outcomes in quotes:
+        groups.setdefault(outcomes_signature(outcomes), []).append((book, outcomes))
 
-    def score(item: tuple[tuple, list[BookMarket]]) -> tuple:
+    def score(item: tuple[tuple, list]) -> tuple:
         _, group = item
-        avg_hold = fmean(_devig_market(bm)[1] for bm in group)
+        avg_hold = fmean(_devig_outcomes(outcomes)[1] for _, outcomes in group)
         return (-len(group), avg_hold)
 
     return min(groups.items(), key=score)[1] if groups else []
 
 
-def fair_from_consensus(
-    markets: Sequence[BookMarket], min_books: int = 2
+def _fair_from_consensus_quotes(
+    market: str,
+    quotes: Sequence[tuple[str, tuple[Outcome, ...]]],
+    min_books: int = 2,
+    group: str | None = None,
 ) -> FairLine | None:
     """Average the de-vigged probabilities of every book on the same number."""
-    usable = [bm for bm in markets if _usable(bm)]
-    group = _consensus_group(usable)
-    if len(group) < min_books:
+    usable = [(book, outcomes) for book, outcomes in quotes if _usable(outcomes)]
+    chosen = _consensus_group(usable)
+    if len(chosen) < min_books:
         return None
 
-    names = [o.name for o in group[0].outcomes]
+    reference = chosen[0][1]
+    names = [o.key for o in reference]
     fair_by_name: dict[str, list[float]] = {name: [] for name in names}
     raw_by_name: dict[str, list[float]] = {name: [] for name in names}
-    for bm in group:
-        fair_probs, _ = _devig_market(bm)
-        for outcome, fair_prob in zip(bm.outcomes, fair_probs):
-            fair_by_name[outcome.name].append(fair_prob)
-            raw_by_name[outcome.name].append(american_to_prob(outcome.price))
+    for _, outcomes in chosen:
+        fair_probs, _ = _devig_outcomes(outcomes)
+        for outcome, fair_prob in zip(outcomes, fair_probs):
+            fair_by_name[outcome.key].append(fair_prob)
+            raw_by_name[outcome.key].append(american_to_prob(outcome.price))
 
     # Averaging de-vigged probabilities can drift off 1.0; renormalize.
     averaged = [fmean(fair_by_name[name]) for name in names]
     normalized = devig(averaged)
     raw_avg = [fmean(raw_by_name[name]) for name in names]
 
-    points = {o.name: o.point for o in group[0].outcomes}
+    points = {o.key: o.point for o in reference}
     sides = tuple(
-        FairSide(
-            name=name,
-            point=points[name],
-            fair_prob=prob,
-            price=prob_to_american(raw),
-        )
+        FairSide(name=name, point=points[name], fair_prob=prob, price=prob_to_american(raw))
         for name, prob, raw in zip(names, normalized, raw_avg)
     )
     return FairLine(
-        market=group[0].market,
+        market=market,
         source="consensus",
-        books=tuple(bm.book for bm in group),
+        books=tuple(book for book, _ in chosen),
         sides=sides,
         hold=hold(raw_avg),
+        group=group,
     )
 
 
-def fair_line(game: Game, market: str, cfg: Config) -> FairLine | None:
-    """Pinnacle, then Circa, then a consensus of the remaining books."""
-    for logical in cfg.sharp_priority:
-        book_key = resolve_book(game, logical, cfg.aliases)
-        if book_key is None:
-            continue
-        line = fair_from_book(game.market(book_key, market), logical)
-        if line is not None:
-            return line
-
-    candidates: list[BookMarket] = []
-    for logical in _consensus_candidates(cfg):
-        book_key = resolve_book(game, logical, cfg.aliases)
-        if book_key is None:
-            continue
-        bm = game.market(book_key, market)
-        if bm is not None:
-            candidates.append(bm)
-    return fair_from_consensus(candidates, min_books=cfg.min_consensus_books)
+def fair_from_consensus(
+    markets: Sequence[BookMarket], min_books: int = 2
+) -> FairLine | None:
+    """Consensus across whole two-sided markets (game markets)."""
+    if not markets:
+        return None
+    quotes = [(bm.book, bm.outcomes) for bm in markets]
+    return _fair_from_consensus_quotes(markets[0].market, quotes, min_books=min_books)
 
 
 def _consensus_candidates(cfg: Config) -> Iterable[str]:
     """Consensus never includes the book we are shopping against."""
     return [b for b in cfg.consensus_books if b != cfg.target_book]
+
+
+def fair_lines(game: Game, market: str, cfg: Config) -> dict[str | None, FairLine]:
+    """Fair lines for every group in a market: one per player, or one per game."""
+    sharp_groups: dict[str | None, FairLine] = {}
+
+    for logical in cfg.sharp_priority:
+        book_key = resolve_book(game, logical, cfg.aliases)
+        if book_key is None:
+            continue
+        book_market = game.market(book_key, market)
+        if book_market is None:
+            continue
+        for group, outcomes in book_market.groups().items():
+            if group in sharp_groups:
+                continue  # an earlier, sharper book already priced this group
+            line = _fair_from_outcomes(book_key, market, outcomes, logical, group=group)
+            if line is not None:
+                sharp_groups[group] = line
+
+    # Anything the sharp books did not cover falls through to consensus.
+    consensus_quotes: dict[str | None, list[tuple[str, tuple[Outcome, ...]]]] = {}
+    for logical in _consensus_candidates(cfg):
+        book_key = resolve_book(game, logical, cfg.aliases)
+        if book_key is None:
+            continue
+        book_market = game.market(book_key, market)
+        if book_market is None:
+            continue
+        for group, outcomes in book_market.groups().items():
+            consensus_quotes.setdefault(group, []).append((book_key, outcomes))
+
+    for group, quotes in consensus_quotes.items():
+        if group in sharp_groups:
+            continue
+        line = _fair_from_consensus_quotes(
+            market, quotes, min_books=cfg.min_consensus_books, group=group
+        )
+        if line is not None:
+            sharp_groups[group] = line
+    return sharp_groups
+
+
+def fair_line(game: Game, market: str, cfg: Config) -> FairLine | None:
+    """The game-level fair line: Pinnacle, then Circa, then a consensus."""
+    return fair_lines(game, market, cfg).get(None)

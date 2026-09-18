@@ -12,7 +12,7 @@ import pytest
 from cfb_edge.cli import main, resolve_markets
 from cfb_edge.config import Config, ConfigError, load_config, load_dotenv
 from cfb_edge.report import kickoff_et
-from cfb_edge.store import connect, init_db
+from cfb_edge.store import SCHEMA_VERSION, connect, init_db
 
 FIXTURE = str(Path(__file__).parent / "fixtures" / "sample_odds.json")
 
@@ -178,7 +178,7 @@ class TestSqliteLog:
         with connect(tmp_path / "x.sqlite") as conn:
             init_db(conn)
             init_db(conn)
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 class TestConfig:
@@ -297,3 +297,136 @@ class TestPipeAndInterrupt:
         monkeypatch.setattr(cli, "_print_report", explode)
         assert run(tmp_path, "--no-db", "--no-files") == 130
         assert "interrupted" in capsys.readouterr().err
+
+
+class TestSubcommands:
+    def test_bare_flags_still_mean_scan(self):
+        from cfb_edge.cli import normalize_argv
+
+        assert normalize_argv(["--min-edge", "2"])[0] == "scan"
+        assert normalize_argv([]) == ["scan"]
+        assert normalize_argv(["scan", "--min-edge", "2"])[0] == "scan"
+        assert normalize_argv(["watch"])[0] == "watch"
+        assert normalize_argv(["--help"]) == ["--help"]
+        assert normalize_argv(["--version"]) == ["--version"]
+
+    def test_explicit_scan_matches_the_shorthand(self, tmp_path, capsys):
+        run(tmp_path)
+        shorthand = capsys.readouterr().out
+        main([
+            "scan", "--cache-file", FIXTURE, "--out-dir", str(tmp_path / "runs2"),
+            "--db", str(tmp_path / "log2.sqlite"), "--min-edge", "1",
+            "--bankroll", "10000", "--no-color",
+        ])
+        explicit = capsys.readouterr().out
+        assert _table_body(shorthand) == _table_body(explicit)
+
+    @pytest.mark.parametrize("command", ["scores", "halfpoint", "bets"])
+    def test_a_subcommand_with_no_action_shows_its_help(self, command, capsys):
+        with pytest.raises(SystemExit):
+            main([command])
+        assert "usage" in capsys.readouterr().out.lower()
+
+    def test_halfpoint_show_without_a_table(self, tmp_path, capsys):
+        assert main(["halfpoint", "show", "--table", str(tmp_path / "none.json")]) == 1
+        assert "no half-point table" in capsys.readouterr().err
+
+    def test_halfpoint_build_without_results(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert main(["halfpoint", "build", "--db", str(tmp_path / "log.sqlite")]) == 1
+        assert "no historical results" in capsys.readouterr().err
+
+    def test_scores_info_without_results(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert main(["scores", "info"]) == 0
+        assert "no results stored" in capsys.readouterr().out
+
+    def test_scores_fetch_without_a_key(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CFBD_API_KEY", raising=False)
+        assert main(["scores", "fetch", "--seasons", "2024"]) == 1
+        assert "CFBD_API_KEY" in capsys.readouterr().err
+
+    def test_a_built_table_is_used_by_the_next_scan(self, tmp_path, capsys, halfpoint_table):
+        from cfb_edge.halfpoint import save_table
+
+        table_path = save_table(halfpoint_table, tmp_path / "hp.json")
+        config = tmp_path / "config.toml"
+        config.write_text(
+            f'[paths]\nhalfpoint_table = "{table_path}"\n'
+            f'db_path = "{tmp_path / "log.sqlite"}"\n'
+            f'out_dir = "{tmp_path / "runs"}"\n',
+            encoding="utf-8",
+        )
+        assert main([
+            "scan", "--config", str(config), "--cache-file", FIXTURE,
+            "--no-files", "--no-db", "--min-edge", "1", "--no-color",
+        ]) == 0
+        out = capsys.readouterr().out
+        assert "priced through the half-point table" in out
+        assert "Over 51.5" in out
+        assert "@53 (pinnacle)" in out
+
+    def test_a_broken_table_is_a_warning_not_a_crash(self, tmp_path, capsys):
+        table_path = tmp_path / "hp.json"
+        table_path.write_text('{"version": 99}', encoding="utf-8")
+        config = tmp_path / "config.toml"
+        config.write_text(f'[paths]\nhalfpoint_table = "{table_path}"\n', encoding="utf-8")
+        assert main([
+            "scan", "--config", str(config), "--cache-file", FIXTURE,
+            "--no-files", "--no-db", "--no-color",
+        ]) == 0
+        assert "half-point table ignored" in capsys.readouterr().out
+
+
+def _table_body(text: str) -> list[str]:
+    """The printed rows, minus the run id and timing lines that always differ."""
+    return [
+        line for line in text.splitlines()
+        if line and not line.startswith(("cfb-edge", "odds:", "logged to", "wrote"))
+    ]
+
+
+class TestNotifyWiring:
+    def test_dry_run_prints_the_payload(self, tmp_path, capsys):
+        run(tmp_path, "--notify-dry-run", "--no-db")
+        out = capsys.readouterr().out
+        assert "discord dry run" in out
+        assert "dry run; nothing sent" in out
+
+    def test_without_the_flag_nothing_is_announced(self, tmp_path, capsys):
+        run(tmp_path)
+        assert "discord" not in capsys.readouterr().out
+
+    def test_a_webhook_failure_does_not_fail_the_scan(self, tmp_path, capsys, monkeypatch):
+        import cfb_edge.notify as notify
+
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.test/hook")
+
+        def fail(*args, **kwargs):
+            raise notify.requests.RequestException("no route")
+
+        monkeypatch.setattr(notify.requests, "post", fail)
+        assert run(tmp_path, "--notify") == 0
+        assert "could not reach" in capsys.readouterr().err
+
+
+class TestPropsWiring:
+    def test_props_are_off_unless_asked_for(self, tmp_path, capsys, monkeypatch):
+        import cfb_edge.api as api
+
+        monkeypatch.setattr(
+            api.requests, "get", lambda *a, **k: pytest.fail("should not call the API")
+        )
+        assert run(tmp_path) == 0
+        assert "per-game requests" not in capsys.readouterr().out
+
+    def test_props_outside_the_window_spend_nothing(self, tmp_path, capsys, monkeypatch):
+        import cfb_edge.api as api
+
+        monkeypatch.setattr(
+            api.requests, "get", lambda *a, **k: pytest.fail("should not call the API")
+        )
+        # The sample board kicks off more than an hour out.
+        assert run(tmp_path, "--props", "--props-window", "1", "--yes") == 0
+        assert "no games inside the props window" in capsys.readouterr().out

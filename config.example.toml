@@ -6,7 +6,8 @@ bankroll = 2000.0
 # Fraction of full Kelly to bet. 0.25 = quarter Kelly.
 kelly_fraction = 0.25
 
-# Never stake more than this percent of bankroll on one bet. Remove for no cap.
+# Never stake more than this percent of bankroll on one bet.
+# Set it to 100 to effectively remove the cap; deleting the line restores this default.
 max_bet_pct = 2.0
 
 # Default minimum edge, in percentage points. --min-edge overrides it.
@@ -47,7 +48,62 @@ caesars = ["williamhill_us", "caesars"]
 cache_dir = "data/cache"
 out_dir = "data/runs"
 db_path = "data/cfb_edge.sqlite"
+scores_db = "data/scores.sqlite"
+halfpoint_table = "data/halfpoint.json"
 
 [cache]
 # Reuse a cached pull younger than this instead of spending an API request.
 max_age_minutes = 15
+
+[halfpoint]
+# Price DraftKings lines that sit off the sharp book's number, using the
+# table built by `cfb-edge halfpoint build`. With no table this is a no-op
+# and those lines are flagged instead.
+enabled = true
+
+# Half the width of the bin, in points. Historical games whose closing number
+# was within this much of a reference line form that line's distribution.
+window = 1.5
+
+# A reference line with fewer games than this is not trusted to price anything.
+min_sample = 200
+
+# Which CollegeFootballData line providers to prefer, best first. Anything
+# not listed falls back to the median across providers.
+line_providers = ["Bovada", "DraftKings", "ESPN Bet", "consensus"]
+
+[props]
+# Props and alternate lines cost one request per game per market, so they are
+# opt-in (--props / --alts) and windowed to games kicking off soon.
+markets = [
+    "player_pass_yds",
+    "player_pass_tds",
+    "player_rush_yds",
+    "player_reception_yds",
+    "player_receptions",
+    "player_anytime_td",
+]
+alt_markets = ["alternate_spreads", "alternate_totals"]
+
+# Only request props for games kicking off within this many hours.
+window_hours = 24.0
+
+# Never request more than this many games in one scan.
+max_events = 25
+
+# Ask before spending more than this many quota units on props.
+confirm_threshold = 10
+
+[watch]
+# Minutes between rescans in `cfb-edge watch`.
+interval_minutes = 15.0
+
+# How far an edge has to move, in percentage points, to be worth reporting.
+edge_delta = 0.25
+
+[discord]
+# Set the webhook in .env as DISCORD_WEBHOOK_URL instead of here if you would
+# rather keep it out of the config file. Nothing is ever sent without --notify.
+# webhook_url = "https://discord.com/api/webhooks/..."
+min_edge = 2.0
+username = "cfb-edge"

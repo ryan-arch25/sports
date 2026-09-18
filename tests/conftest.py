@@ -45,3 +45,35 @@ def make_game(books: dict[str, dict[str, list[Outcome]]], **kwargs) -> Game:
             for market, outcomes in markets.items()
         }
     return game
+
+
+@pytest.fixture(scope="session")
+def synthetic_history():
+    from synthetic import synthetic_games
+
+    return synthetic_games(3000)
+
+
+@pytest.fixture(scope="session")
+def halfpoint_table(synthetic_history):
+    from cfb_edge.halfpoint import build_table
+
+    return build_table(synthetic_history, min_sample=50)
+
+
+@pytest.fixture
+def scan_args(tmp_path):
+    """A parsed `scan` namespace pointed at the sample board."""
+    from cfb_edge.cli import build_parser, normalize_argv
+
+    def build(*extra: str):
+        argv = normalize_argv([
+            "--cache-file", str(FIXTURE),
+            "--out-dir", str(tmp_path / "runs"),
+            "--db", str(tmp_path / "log.sqlite"),
+            "--no-color",
+            *extra,
+        ])
+        return build_parser().parse_args(argv)
+
+    return build
