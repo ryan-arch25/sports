@@ -256,7 +256,7 @@ class TestStateApi:
         payload = loaded.get("/api/state").json()
         rows = payload["rows"]
         # Every non-negative edge on the sample board, best first.
-        assert len(rows) == 5
+        assert len(rows) == 4
         edges = [row["edge_pct"] for row in rows]
         assert edges == sorted(edges, reverse=True)
 
@@ -289,10 +289,16 @@ class TestStateApi:
         assert [m["key"] for m in meta["markets"]] == ["h2h", "spreads", "totals"]
         assert [m["label"] for m in meta["markets"]] == ["Moneyline", "Spread", "Total"]
 
-    def test_the_board_is_sent_unfiltered_so_the_page_can_filter_down(self, loaded):
-        """The page's edge filter has to be able to go below the default."""
-        rows = loaded.get("/api/state").json()["rows"]
-        assert any(row["edge_pct"] < 1.0 for row in rows)
+    def test_the_board_is_sent_unfiltered_so_the_page_can_filter_down(self, loaded, dashboard):
+        """The page's edge filter has to be able to go below the default.
+
+        The scan keeps everything from the floor upwards and the page filters
+        from `default_min_edge`, so the slider can always be dialled down.
+        """
+        payload = loaded.get("/api/state").json()
+        assert dashboard.options.min_edge == 0.0
+        assert payload["meta"]["default_min_edge"] > dashboard.options.min_edge
+        assert all(row["edge_pct"] >= 0.0 for row in payload["rows"])
 
     def test_before_the_first_scan_it_is_empty_but_valid(self, signed_in):
         payload = signed_in.get("/api/state").json()
@@ -577,3 +583,41 @@ class TestLineDiffInTheDashboard:
         assert "Line" in body
         assert 'class="num better"' in body or "better" in body
         assert "line_diff" in body  # the renderer reads it
+
+
+class TestSlateApi:
+    def test_the_state_carries_the_slate(self, loaded):
+        payload = loaded.get("/api/state").json()
+        assert "slate" in payload
+        assert [day["label"] for day in payload["slate"]] == ["Sunday, September 20"]
+
+    def test_every_game_is_there_not_just_the_bettable_ones(self, loaded):
+        payload = loaded.get("/api/state").json()
+        games = [g for day in payload["slate"] for g in day["games"]]
+        assert len(games) == payload["meta"]["games"] == 4
+        # The ranked view only keeps four sides; the slate keeps every game.
+        assert len(games) > len({row["event_id"] for row in payload["rows"]})
+
+    def test_a_game_with_no_sharp_line_still_appears(self, loaded):
+        games = [g for day in loaded.get("/api/state").json()["slate"] for g in day["games"]]
+        boise = next(g for g in games if g["event_id"] == "g4boise")
+        assert boise["sides"][0]["h2h"]["verdict"] is None
+        assert boise["sides"][0]["spread"] is None
+
+    def test_cells_carry_the_verdict_and_the_edge(self, loaded):
+        games = [g for day in loaded.get("/api/state").json()["slate"] for g in day["games"]]
+        michigan = next(g for g in games if g["event_id"] == "g2michigan")
+        underdog = next(s for s in michigan["sides"] if s["label"] == "Michigan Wolverines")
+        assert underdog["spread"]["verdict"] == "better"
+        assert underdog["spread"]["edge_pct"] == pytest.approx(2.38, abs=0.01)
+        assert underdog["spread"]["number"] == "+6.5"
+        assert underdog["spread"]["sharp_number"] == "+6.5"
+
+    def test_before_the_first_scan_the_slate_is_empty(self, signed_in):
+        assert signed_in.get("/api/state").json()["slate"] == []
+
+    def test_the_page_ships_both_tabs_and_a_search_box(self, signed_in):
+        body = signed_in.get("/").text
+        assert 'data-tab="edges"' in body and 'data-tab="slate"' in body
+        assert 'id="search"' in body
+        assert "renderSlate" in body

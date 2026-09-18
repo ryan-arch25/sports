@@ -16,11 +16,11 @@ GAME                              KICKOFF (ET)        MARKET     PICK           
 --------------------------------  ------------------  ---------  ------------------------  ----  -------------------  ---------  -----  -----  ----  -------  ------
 Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Total      Over 51.5                 -110  -105 @53 (pinnacle)       +1.5  56.2%  52.4%  3.8%    +7.29  $40.00
 Ohio State Buckeyes @ Michigan …  Sun 09/20 12:00 PM  Spread     Michigan Wolverines +6.5  +110         -110 (circa)          -  50.0%  47.6%  2.4%    +5.00  $22.73
-Texas Longhorns @ Oklahoma Soon…  Sun 09/20 8:00 PM   Total      Over 44.5                 +110  -109 (consensus(2))          -  49.8%  47.6%  2.2%    +4.55  $20.66
-Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Moneyline  Georgia Bulldogs ML       +145      +130 (pinnacle)          -  42.4%  40.8%  1.5%    +3.76  $12.96
+Texas Longhorns @ Oklahoma Soon…  Sun 09/20 8:00 PM   Total      Over 44.5                 +110  -109 (consensus(2))          -  49.8%  47.6%  2.1%    +4.51  $20.51
+Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Moneyline  Georgia Bulldogs ML       +145      +130 (pinnacle)          -  42.0%  40.8%  1.2%    +3.02  $10.41
 Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Spread     Georgia Bulldogs +3.5     +105      -105 (pinnacle)          -  50.0%  48.8%  1.2%    +2.50  $11.90
 
-5 bet(s) at >= 1% edge | total stake $108.26 | expected profit $5.78
+5 bet(s) at >= 1% edge | total stake $105.56 | expected profit $5.59
 ```
 
 The first row is DraftKings on a different number from Pinnacle: `@53` marks a
@@ -121,15 +121,32 @@ cached pull instead of spending another request. `--refresh` forces a new one.
 **3. Find the fair price.** For each game and market, the sharp reference is
 Pinnacle; if Pinnacle has not posted that market, Circa; if neither has it, a
 consensus of FanDuel, BetMGM and Caesars. Both sides' American prices become
-implied probabilities, and each is divided by their sum. That removes the vig
-proportionally and leaves fair win probabilities summing to 1:
+implied probabilities, and the vig comes out with the **power method**: solve
+for the exponent `k` where
 
 ```
-Pinnacle:  Over 53 (-105)   -> 0.5122
-           Under 53 (-105)  -> 0.5122     sum 1.0244  (2.44% hold)
-fair:      Over  0.5122 / 1.0244 = 0.5000
-           Under 0.5122 / 1.0244 = 0.5000
+sum(p_i ** k) = 1
 ```
+
+and take `p_i ** k` as fair. Raising a small probability to a power above 1
+cuts it proportionally harder than a large one, so the margin comes mostly off
+the longshot — which is where books actually put it. A vig-free market solves
+to `k = 1` and is left alone.
+
+```
+Circa:  Ohio State -260   -> 0.7222
+        Michigan   +215   -> 0.3175     sum 1.0397  (3.97% hold)
+k = 1.0537
+fair:   Ohio State 0.7222 ** k = 0.7015
+        Michigan   0.3175 ** k = 0.2985
+```
+
+The older proportional (multiplicative) method — divide each side by the sum —
+would have given the dog 0.3054 instead of 0.2985, about seven tenths of a
+point too generous, and the gap widens the longer the price. That difference is
+the whole reason for the change: it is enough to turn a marginal dog into a
+"bet" that is not one. Set `[devig] method = "multiplicative"` in `config.toml`
+to go back, mostly useful for comparing the two.
 
 For the consensus fallback, each book is de-vigged on its own and the fair
 probabilities are averaged, but only across books sitting on the *same* number —
@@ -422,6 +439,28 @@ and minimum edge are client-side, so they are instant and cost no requests; they
 are remembered per browser. On a phone each bet becomes a labelled card rather
 than a table you have to scroll sideways.
 
+### The Slate tab
+
+The Edges tab answers "what should I bet". The **Slate** tab answers "what does
+the board look like": every game in the current scan, grouped by kickoff day and
+ordered by kickoff time in ET, with DraftKings and the sharp book side by side
+for spread, total and moneyline.
+
+Each game takes two rows, the way a sportsbook lists one: the away team with the
+Over on top, the home team with the Under beneath. Every cell shows the number
+above and the price below, and the sharp cells name the book they came from, so
+you can see at a glance whether "sharp" here means Pinnacle, Circa or a
+consensus of the soft books.
+
+DraftKings cells are coloured green when DK is the better side of that market
+and red when it is worse. The rule is the number first — a half point is worth
+more than a cent or two — and the price when both books are on the same number.
+A positive edge appears beneath the price. Games with no sharp line, or no
+DraftKings market, show dashes rather than disappearing.
+
+The search box filters by team name. On a phone the table scrolls sideways with
+the team column pinned, so you never lose track of which side you are reading.
+
 A **Refresh** button forces a scan, rate-limited to once every 30 seconds. It is
 usually free: the odds cache means a refresh inside `max_age_minutes` replays
 the last pull instead of spending quota.
@@ -549,7 +588,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-511 tests, no network access required. The odds conversion and de-vig math are
+555 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -557,8 +596,9 @@ half-point-translation handling (`test_edges.py`), the half-point model itself
 guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging and
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
-(`test_web.py`), the container entrypoint that prepares a mounted volume
-(`test_entrypoint.py`), and the CLI end to end against a sample board in
+(`test_web.py`), the Slate view's comparisons and grouping (`test_slate.py`),
+the container entrypoint that prepares a mounted volume (`test_entrypoint.py`),
+and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).
 
 Network-facing code is tested against stubs. `tests/synthetic.py` generates
@@ -570,9 +610,12 @@ can be exercised deterministically — it is scaffolding, not data.
 - Edges are only as good as the sharp line. A stale Pinnacle price or a
   consensus built from two soft books on the same bad number will produce edges
   that are not real.
-- De-vigging is proportional (multiplicative). It is the standard approach and
-  the right default, but it slightly overrates heavy favorites compared to
-  power/Shin methods; on big moneyline dogs treat the fair price as approximate.
+- De-vigging uses the power method, which assumes the book's margin falls on
+  the longshot in the particular way that `sum(p ** k) = 1` implies. That is a
+  better description of how books price than a flat proportional split, but it
+  is still a model, not a measurement — Shin's method makes a different
+  assumption and lands somewhere else again. On very long prices treat the fair
+  number as approximate.
 - The half-point table is an empirical model with the assumptions listed above,
   built from whatever seasons you downloaded. It narrows the gap on a
   half-point difference; it does not close it.

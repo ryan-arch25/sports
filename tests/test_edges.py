@@ -76,7 +76,7 @@ class TestMatchingNumbers:
         rows = evaluate_market(game, "h2h", cfg)
         assert {r.status for r in rows} == {PRICED}
         away = next(r for r in rows if r.side == "Away Team")
-        assert away.edge_pct == pytest.approx(1.53, abs=1e-2)
+        assert away.edge_pct == pytest.approx(1.23, abs=1e-2)
 
     def test_spread_sides_match_on_their_own_number(self, cfg):
         game = two_book_game(
@@ -156,7 +156,7 @@ class TestRanking:
 
     def test_min_edge_threshold_is_applied(self, sample_games, cfg):
         rows = evaluate_games(sample_games, cfg, ("h2h", "spreads", "totals"))
-        assert len(rank(rows, 0.0)) > len(rank(rows, 1.0)) > len(rank(rows, 2.5))
+        assert len(rank(rows, 0.0)) > len(rank(rows, 1.5)) > len(rank(rows, 2.5))
 
     def test_market_filter_limits_the_rows(self, sample_games, cfg):
         rows = evaluate_games(sample_games, cfg, ("totals",))

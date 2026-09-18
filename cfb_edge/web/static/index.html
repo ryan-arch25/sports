@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f7a4d'/%3E%3Cpath d='M4 11l3-4 2.5 2.5L12 5' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>{{title}}</title>
 <style>
   :root {
@@ -47,6 +48,44 @@
   button:hover:not(:disabled) { border-color: var(--accent); }
   button:disabled { opacity: 0.5; cursor: default; }
   form.inline { display: inline; }
+
+  .tabs { display: flex; gap: 4px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
+  .tab {
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    background: none; padding: 8px 14px; font-size: 14px; color: var(--muted);
+  }
+  .tab:hover:not(.active) { color: var(--ink); border-color: var(--line); }
+  .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+  .view[hidden] { display: none; }
+
+  .day { margin: 22px 0 8px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .day:first-child { margin-top: 12px; }
+  .slate-table { margin-bottom: 4px; }
+  .slate-table tbody { border-top: 1px solid var(--line); }
+  .slate-table tbody:first-of-type { border-top: 0; }
+  .slate-table td { border-bottom: 0; padding: 6px 9px; vertical-align: top; }
+  .slate-table tbody tr:first-child td { padding-top: 10px; }
+  .slate-table tbody tr:last-child td { padding-bottom: 10px; }
+  .slate-table tbody:hover td { background: var(--line-soft); }
+  .time { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+  .team { white-space: normal; }
+  .odds { line-height: 1.25; }
+  .odds .price { display: block; font-size: 11px; color: var(--muted); }
+  .odds.better, .odds.worse { border-radius: 6px; }
+  .odds.better { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .odds.worse { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+  .odds.better .price, .odds.worse .price { color: inherit; opacity: 0.8; }
+  .odds .edge {
+    display: block; font-size: 11px; font-weight: 700; color: var(--accent);
+  }
+  .odds.empty { color: var(--muted); }
+  .legend { margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .legend b { font-weight: 600; }
+  .legend .swatch {
+    display: inline-block; padding: 0 5px; border-radius: 4px; font-weight: 600;
+  }
+  .legend .swatch.better { background: var(--accent-soft); color: var(--accent); }
+  .legend .swatch.worse { background: var(--danger-soft); color: var(--danger); }
 
   .banner {
     margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
@@ -100,6 +139,19 @@
   footer code { font-size: 11px; }
 
   @media (max-width: 720px) {
+    .slate-table thead { display: table-header-group; }
+    .slate-table, .slate-table tbody, .slate-table tr, .slate-table td { display: revert; }
+    .slate-table td { display: table-cell; text-align: right; white-space: nowrap; }
+    .slate-table td::before { content: none; }
+    .slate-table td.team { text-align: left; white-space: normal; font-size: 13px; }
+    .slate-scroll { overflow-x: visible; }
+    .slate-scroll .table-scroll { overflow-x: auto; }
+    /* Keep the teams in view while the markets scroll under the thumb. */
+    .slate-table td.team, .slate-table th:first-child {
+      position: sticky; left: 0; z-index: 2; background: var(--panel);
+      box-shadow: 1px 0 0 var(--line-soft);
+    }
+    .slate-table tbody:hover td.team { background: var(--line-soft); }
     .wrap { padding: 16px 12px 40px; }
     .count { width: 100%; margin-left: 0; text-align: left; }
     .table-scroll { overflow-x: visible; }
@@ -145,6 +197,12 @@
   <div class="banner" id="error" hidden></div>
   <div class="banner info" id="notice" hidden></div>
 
+  <nav class="tabs" id="tabs">
+    <button class="tab active" type="button" data-tab="edges">Edges</button>
+    <button class="tab" type="button" data-tab="slate">Slate</button>
+  </nav>
+
+  <section class="view" id="view-edges">
   <div class="controls">
     <div class="field">
       <label for="market">Market</label>
@@ -189,6 +247,26 @@
     <div class="empty" id="empty" hidden></div>
   </div>
 
+  </section>
+
+  <section class="view" id="view-slate" hidden>
+    <div class="controls">
+      <div class="field">
+        <label for="search">Search</label>
+        <input id="search" type="search" placeholder="Team name" autocomplete="off">
+      </div>
+      <div class="count" id="slateCount"></div>
+    </div>
+    <div class="slate-scroll" id="slate"></div>
+    <div class="empty" id="slateEmpty" hidden></div>
+    <p class="legend">
+      DraftKings cells are <span class="swatch better">green</span> when DK's number
+      (or, on the same number, its price) beats the sharp book's for that side and
+      <span class="swatch worse">red</span> when it is worse. The second line of each
+      cell is the price; a positive edge is shown beneath it.
+    </p>
+  </section>
+
   <footer id="footer"></footer>
 </div>
 
@@ -210,7 +288,14 @@
     rows: document.getElementById("rows"),
     empty: document.getElementById("empty"),
     footer: document.getElementById("footer"),
-    refresh: document.getElementById("refresh")
+    refresh: document.getElementById("refresh"),
+    tabs: document.getElementById("tabs"),
+    viewEdges: document.getElementById("view-edges"),
+    viewSlate: document.getElementById("view-slate"),
+    search: document.getElementById("search"),
+    slate: document.getElementById("slate"),
+    slateCount: document.getElementById("slateCount"),
+    slateEmpty: document.getElementById("slateEmpty")
   };
 
   function store(key, value) {
@@ -240,6 +325,150 @@
     if (minutes < 60) return minutes + " min ago";
     var hours = Math.round(minutes / 60);
     return hours === 1 ? "an hour ago" : hours + " hours ago";
+  }
+
+  function setTab(name) {
+    var tabs = els.tabs.querySelectorAll(".tab");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle("active", tabs[i].dataset.tab === name);
+    }
+    els.viewEdges.hidden = name !== "edges";
+    els.viewSlate.hidden = name !== "slate";
+    store("cfb-edge.tab", name);
+    if (name === "slate") renderSlate();
+  }
+
+  function oddsCell(cell, isDk) {
+    var td = document.createElement("td");
+    td.className = "num odds";
+    var number = cell && (isDk ? cell.number : cell.sharp_number);
+    var price = cell && (isDk ? cell.price : cell.sharp_price);
+    if (!cell || (!number && !price)) {
+      td.classList.add("empty");
+      td.textContent = "\u2013";
+      return td;
+    }
+    if (isDk && (cell.verdict === "better" || cell.verdict === "worse")) {
+      td.classList.add(cell.verdict);
+      td.title = cell.verdict === "better"
+        ? "DraftKings is the better side of this market"
+        : "DraftKings is the worse side of this market";
+    }
+    td.appendChild(document.createTextNode(number || price));
+    if (number) {
+      var priceLine = document.createElement("span");
+      priceLine.className = "price";
+      priceLine.textContent = price;
+      td.appendChild(priceLine);
+    }
+    if (isDk && cell.edge_pct !== null && cell.edge_pct > 0) {
+      var edge = document.createElement("span");
+      edge.className = "edge";
+      edge.textContent = "+" + cell.edge_pct.toFixed(2) + "%";
+      td.appendChild(edge);
+    }
+    if (!isDk && cell.sharp_source) {
+      var source = document.createElement("span");
+      source.className = "price";
+      source.textContent = cell.sharp_source;
+      td.appendChild(source);
+    }
+    return td;
+  }
+
+  function slateHead() {
+    var thead = document.createElement("thead");
+    var top = document.createElement("tr");
+    var game = document.createElement("th");
+    game.textContent = "Game";
+    top.appendChild(game);
+    ["Spread", "Total", "Moneyline"].forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      th.colSpan = 2;
+      th.className = "num";
+      top.appendChild(th);
+    });
+    var bottom = document.createElement("tr");
+    // Sticky positioning does not survive a rowspan, so the corner is its own cell.
+    bottom.appendChild(document.createElement("th"));
+    ["DK", "Sharp", "DK", "Sharp", "DK", "Sharp"].forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      th.className = "num";
+      bottom.appendChild(th);
+    });
+    thead.appendChild(top);
+    thead.appendChild(bottom);
+    return thead;
+  }
+
+  function gameBody(game) {
+    var tbody = document.createElement("tbody");
+    game.sides.forEach(function (side, index) {
+      var tr = document.createElement("tr");
+      var team = document.createElement("td");
+      team.className = "team";
+      if (index === 0) {
+        var time = document.createElement("span");
+        time.className = "time";
+        time.textContent = game.kickoff_time_et;
+        team.appendChild(time);
+      }
+      team.appendChild(document.createTextNode(side.label));
+      tr.appendChild(team);
+      ["spread", "total", "h2h"].forEach(function (market) {
+        tr.appendChild(oddsCell(side[market], true));
+        tr.appendChild(oddsCell(side[market], false));
+      });
+      tbody.appendChild(tr);
+    });
+    return tbody;
+  }
+
+  function renderSlate() {
+    if (!state) return;
+    var query = (els.search.value || "").trim().toLowerCase();
+    var days = (state.slate || []).map(function (day) {
+      return {
+        label: day.label,
+        games: query
+          ? day.games.filter(function (g) { return g.search.indexOf(query) >= 0; })
+          : day.games
+      };
+    }).filter(function (day) { return day.games.length; });
+
+    els.slate.innerHTML = "";
+    var shown = 0;
+    days.forEach(function (day) {
+      var heading = document.createElement("h2");
+      heading.className = "day";
+      heading.textContent = day.label;
+      els.slate.appendChild(heading);
+
+      var wrapper = document.createElement("div");
+      wrapper.className = "table-scroll";
+      var table = document.createElement("table");
+      table.className = "slate-table";
+      table.appendChild(slateHead());
+      day.games.forEach(function (game) {
+        table.appendChild(gameBody(game));
+        shown += 1;
+      });
+      wrapper.appendChild(table);
+      els.slate.appendChild(wrapper);
+    });
+
+    var total = (state.slate || []).reduce(function (n, d) { return n + d.games.length; }, 0);
+    els.slateCount.textContent = shown === total
+      ? total + " game" + (total === 1 ? "" : "s")
+      : shown + " of " + total + " games";
+    els.slateEmpty.hidden = shown > 0;
+    if (!shown) {
+      els.slateEmpty.textContent = total
+        ? "No game matches \u201c" + query + "\u201d."
+        : (state.meta.ready ? "No games on the board." : "Waiting for the first scan\u2026");
+    }
   }
 
   function cell(row, text, className, label) {
@@ -366,6 +595,8 @@
       els.empty.hidden = true;
     }
 
+    renderSlate();
+
     var bits = [];
     bits.push("Rescans every " + meta.refresh_minutes + " min");
     bits.push("bankroll $" + Math.round(meta.bankroll).toLocaleString() +
@@ -418,6 +649,12 @@
     });
   });
 
+  els.tabs.addEventListener("click", function (event) {
+    var tab = event.target.closest(".tab");
+    if (tab) setTab(tab.dataset.tab);
+  });
+  els.search.addEventListener("input", renderSlate);
+
   ["market", "minEdge", "sort"].forEach(function (name) {
     var saved = recall("cfb-edge." + name);
     if (saved !== null) els[name].value = saved;
@@ -428,6 +665,7 @@
   });
   els.minEdge.addEventListener("input", render);
 
+  setTab(recall("cfb-edge.tab") === "slate" ? "slate" : "edges");
   poll();
   window.setInterval(poll, POLL_MS);
 })();

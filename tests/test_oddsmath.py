@@ -13,6 +13,9 @@ from cfb_edge.oddsmath import (
     decimal_to_american,
     devig,
     devig_american,
+    devig_k,
+    devig_multiplicative,
+    devig_power,
     edge,
     ev_per_100,
     format_american,
@@ -127,13 +130,13 @@ class TestDevig:
 
     def test_known_two_way_example(self):
         # +150 / -170: raw 0.4000 and 0.6296, total 1.0296.
-        fair = devig_american([150, -170])
+        fair = devig_multiplicative([american_to_prob(150), american_to_prob(-170)])
         assert fair[0] == pytest.approx(0.4 / (0.4 + 170 / 270), abs=1e-12)
         assert fair == pytest.approx([0.388489, 0.611511], abs=1e-6)
 
     def test_preserves_ratio_between_sides(self):
         raw = [american_to_prob(-145), american_to_prob(130)]
-        fair = devig(raw)
+        fair = devig_multiplicative(raw)
         assert fair[0] / fair[1] == pytest.approx(raw[0] / raw[1])
 
     def test_favorite_stays_the_favorite(self):
@@ -144,11 +147,12 @@ class TestDevig:
         # Proportional de-vigging scales both sides by the same factor, so the
         # bigger raw probability sheds the larger absolute amount.
         raw = [american_to_prob(-250), american_to_prob(215)]
-        fair = devig(raw)
+        fair = devig_multiplicative(raw)
         assert raw[0] - fair[0] > raw[1] - fair[1] > 0
 
     def test_already_fair_market_is_unchanged(self):
         assert devig([0.25, 0.75]) == pytest.approx([0.25, 0.75])
+        assert devig_multiplicative([0.25, 0.75]) == pytest.approx([0.25, 0.75])
 
     def test_three_way_market_normalizes(self):
         fair = devig([0.4, 0.4, 0.3])
@@ -163,6 +167,83 @@ class TestDevig:
     def test_rejects_non_positive_probabilities(self, probs):
         with pytest.raises(OddsError):
             devig(probs)
+
+    def test_the_default_is_the_power_method(self):
+        raw = [american_to_prob(-250), american_to_prob(215)]
+        assert devig(raw) == pytest.approx(devig_power(raw))
+
+    def test_the_method_can_be_chosen(self):
+        raw = [american_to_prob(-250), american_to_prob(215)]
+        assert devig(raw, method="multiplicative") == pytest.approx(devig_multiplicative(raw))
+
+    def test_an_unknown_method_is_rejected(self):
+        with pytest.raises(OddsError, match="unknown de-vig method"):
+            devig([0.55, 0.5], method="shin")
+
+
+class TestPowerDevig:
+    """sum(p ** k) = 1, which takes the margin mostly off the longshot."""
+
+    def test_sums_to_one(self):
+        assert sum(devig_power([american_to_prob(-250), american_to_prob(215)])) == pytest.approx(1.0)
+
+    def test_symmetric_juice_splits_evenly(self):
+        assert devig_power([american_to_prob(-110)] * 2) == pytest.approx([0.5, 0.5])
+
+    def test_an_already_fair_market_is_left_alone(self):
+        assert devig_power([0.25, 0.75]) == pytest.approx([0.25, 0.75])
+        assert devig_k([0.25, 0.75]) == pytest.approx(1.0)
+
+    def test_the_exponent_is_above_one_for_a_vigged_market(self):
+        assert devig_k([american_to_prob(-110)] * 2) > 1.0
+
+    def test_longshots_come_out_lower_than_under_the_multiplicative_method(self):
+        """The whole point: a 30% dog should not be handed back 30.8%."""
+        raw = [american_to_prob(-250), american_to_prob(215)]
+        power = devig_power(raw)
+        proportional = devig_multiplicative(raw)
+        assert power[1] < proportional[1]
+        assert power[0] > proportional[0]
+
+    def test_the_gap_widens_with_the_longshot(self):
+        short = [american_to_prob(-140), american_to_prob(120)]
+        long = [american_to_prob(-2000), american_to_prob(1200)]
+        short_gap = devig_multiplicative(short)[1] - devig_power(short)[1]
+        long_gap = devig_multiplicative(long)[1] - devig_power(long)[1]
+        assert long_gap > short_gap > 0
+
+    def test_known_value(self):
+        # -250 / +215: raw 0.7143 and 0.3175, k solves to about 1.0537.
+        fair = devig_power([american_to_prob(-250), american_to_prob(215)])
+        assert fair == pytest.approx([0.701501, 0.298499], abs=1e-5)
+
+    def test_the_favorite_stays_the_favorite(self):
+        fair = devig_power([american_to_prob(-250), american_to_prob(215)])
+        assert fair[0] > fair[1]
+
+    def test_a_three_way_market_normalizes(self):
+        fair = devig_power([0.4, 0.4, 0.3])
+        assert sum(fair) == pytest.approx(1.0)
+        assert fair[0] == pytest.approx(fair[1])
+
+    def test_an_underround_market_is_pushed_up(self):
+        """Arbitrage, or an averaged consensus: the sum is below one."""
+        fair = devig_power([0.45, 0.50])
+        assert sum(fair) == pytest.approx(1.0)
+        assert fair[0] > 0.45 and fair[1] > 0.50
+
+    def test_a_certainty_is_rejected(self):
+        with pytest.raises(OddsError, match="below 1"):
+            devig_power([1.0, 0.2])
+
+    def test_needs_two_sides(self):
+        with pytest.raises(OddsError):
+            devig_power([0.52])
+
+    def test_a_heavy_favorite_stays_inside_the_unit_interval(self):
+        fair = devig_power([american_to_prob(-5000), american_to_prob(2500)])
+        assert 0.0 < fair[1] < fair[0] < 1.0
+        assert sum(fair) == pytest.approx(1.0)
 
 
 class TestEdgeAndEv:

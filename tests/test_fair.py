@@ -47,7 +47,7 @@ class TestConsensus:
         assert line.source == "consensus"
         assert line.label == "consensus(2)"
         assert sum(s.fair_prob for s in line.sides) == pytest.approx(1.0)
-        assert line.side("Over").fair_prob == pytest.approx(0.49783, abs=1e-4)
+        assert line.side("Over").fair_prob == pytest.approx(0.49768, abs=1e-4)
 
     def test_ignores_books_on_a_different_number(self):
         books = [
@@ -155,7 +155,7 @@ class TestAgainstTheSampleBoard:
     def test_pinnacle_game(self, games_by_id, cfg):
         line = fair_line(games_by_id["g1alabama"], "h2h", cfg)
         assert line.source == "pinnacle"
-        assert line.side("Georgia Bulldogs").fair_prob == pytest.approx(0.4235, abs=1e-3)
+        assert line.side("Georgia Bulldogs").fair_prob == pytest.approx(0.4205, abs=1e-3)
 
     def test_circa_game(self, games_by_id, cfg):
         line = fair_line(games_by_id["g2michigan"], "spreads", cfg)

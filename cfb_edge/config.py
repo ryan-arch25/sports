@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from cfb_edge.oddsmath import DEVIG_METHODS
+
 DEFAULT_CONFIG_PATHS = ("config.toml", "cfb-edge.toml")
 
 # Logical book name -> Odds API bookmaker keys to accept, in preference order.
@@ -33,6 +35,7 @@ class Config:
     kelly_fraction: float = 0.25
     max_bet_pct: float | None = 2.0
     min_edge: float = 1.0  # percentage points
+    devig_method: str = "power"
     markets: tuple[str, ...] = ("h2h", "spreads", "totals")
     regions: str = "us"
     sport: str = "americanfootball_ncaaf"
@@ -169,6 +172,11 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         cfg.max_bet_pct = None if value is None else float(value)
     if "min_edge" in data:
         cfg.min_edge = float(data["min_edge"])
+    devig = data.get("devig") or {}
+    if "method" in devig:
+        cfg.devig_method = str(devig["method"]).strip().lower()
+    elif "devig_method" in data:
+        cfg.devig_method = str(data["devig_method"]).strip().lower()
     if "markets" in data:
         cfg.markets = tuple(str(m) for m in data["markets"])
     if "regions" in data:
@@ -256,6 +264,11 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         os.environ.get("DISCORD_WEBHOOK_URL") or cfg.discord_webhook_url or None
     )
 
+    if cfg.devig_method not in DEVIG_METHODS:
+        raise ConfigError(
+            f"unknown devig method {cfg.devig_method!r}; "
+            f"choose from {', '.join(DEVIG_METHODS)}"
+        )
     if cfg.kelly_fraction <= 0:
         raise ConfigError("kelly_fraction must be > 0")
     if cfg.bankroll < 0:

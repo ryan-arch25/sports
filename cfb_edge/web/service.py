@@ -70,6 +70,7 @@ class DashboardState:
     """What the page renders. Always safe to serve, even before the first scan."""
 
     rows: list[dict[str, Any]] = field(default_factory=list)
+    slate: list[dict[str, Any]] = field(default_factory=list)
     markets: list[dict[str, str]] = field(default_factory=list)
     updated_at_utc: str | None = None
     updated_at_et: str | None = None
@@ -95,6 +96,7 @@ class DashboardState:
     def as_dict(self) -> dict[str, Any]:
         return {
             "rows": self.rows,
+            "slate": self.slate,
             "meta": {
                 "markets": self.markets,
                 "updated_at_utc": self.updated_at_utc,
@@ -230,8 +232,13 @@ class Dashboard:
     def apply(self, result: ScanResult) -> None:
         """Replace the served state with a finished scan."""
         now = datetime.now(timezone.utc)
+        from cfb_edge.web.slate import build_slate
+
         rows = [serialize_row(row) for row in result.bets]
         self.state.rows = rows
+        # The slate keeps every game and both sides of every market, which the
+        # ranked rows deliberately do not.
+        self.state.slate = build_slate(result.games, result.rows)
         self.state.markets = markets_present(result.markets, result.bets)
         self.state.updated_at_utc = _iso(now)
         self.state.updated_at_et = kickoff_et(now)

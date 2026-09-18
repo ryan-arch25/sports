@@ -79,24 +79,120 @@ def hold(probs: Sequence[float]) -> float:
     return sum(probs) - 1.0
 
 
-def devig(probs: Sequence[float]) -> list[float]:
-    """Remove the vig by proportional (multiplicative) normalization.
+MULTIPLICATIVE = "multiplicative"
+POWER = "power"
+DEVIG_METHODS = (POWER, MULTIPLICATIVE)
+DEFAULT_DEVIG_METHOD = POWER
 
-    Each side's implied probability is divided by the sum of all sides, so the
-    result sums to exactly 1 while preserving the ratios between sides.
-    """
+
+def _validated(probs: Sequence[float]) -> list[float]:
     values = [float(p) for p in probs]
     if len(values) < 2:
         raise OddsError("need at least two sides to de-vig")
     if any(p <= 0.0 for p in values):
         raise OddsError(f"implied probabilities must be positive, got {probs!r}")
+    return values
+
+
+def devig_multiplicative(probs: Sequence[float]) -> list[float]:
+    """Remove the vig by proportional normalization.
+
+    Each side's implied probability is divided by the sum of all sides, so the
+    result sums to exactly 1 while preserving the ratios between sides. Simple,
+    but it takes the same proportion out of every side, which leaves longshots
+    overstated: books do not price a 5% shot with the same margin as an even
+    one.
+    """
+    values = _validated(probs)
     total = sum(values)
     return [p / total for p in values]
 
 
-def devig_american(odds: Iterable[float]) -> list[float]:
+def devig_power(
+    probs: Sequence[float], tolerance: float = 1e-12, max_iterations: int = 200
+) -> list[float]:
+    """Remove the vig by solving for the k where the powered sum is 1.
+
+    Find k such that sum(p_i ** k) = 1, then take p_i ** k as fair. Because
+    raising a small probability to a power above 1 cuts it proportionally
+    harder than a large one, the margin comes disproportionately off the
+    longshot, which is where books actually put it.
+
+    sum(p_i ** k) is strictly decreasing in k for probabilities in (0, 1), so a
+    bisection is both safe and fast.
+    """
+    values = _validated(probs)
+    if any(p >= 1.0 for p in values):
+        raise OddsError(
+            f"the power method needs every probability below 1, got {probs!r}"
+        )
+    total = sum(values)
+    if abs(total - 1.0) <= tolerance:
+        return list(values)  # already fair; k would be 1
+
+    def powered(k: float) -> float:
+        return sum(p ** k for p in values)
+
+    # Bracket the root. Overround (total > 1) needs k > 1; the underround case
+    # needs k < 1, and powered(k) -> len(values) > 1 as k -> 0, so both ends
+    # are always reachable.
+    if total > 1.0:
+        low, high = 1.0, 2.0
+        while powered(high) > 1.0:
+            high *= 2.0
+            if high > 1e6:
+                raise OddsError(f"could not de-vig {probs!r}: no solution found")
+    else:
+        low, high = 0.5, 1.0
+        while powered(low) < 1.0:
+            low /= 2.0
+            if low < 1e-6:
+                raise OddsError(f"could not de-vig {probs!r}: no solution found")
+
+    for _ in range(max_iterations):
+        middle = (low + high) / 2.0
+        value = powered(middle)
+        if abs(value - 1.0) <= tolerance:
+            break
+        if value > 1.0:
+            low = middle
+        else:
+            high = middle
+    else:
+        middle = (low + high) / 2.0
+
+    fair = [p ** middle for p in values]
+    # The bisection stops within tolerance rather than exactly on 1; normalize
+    # so callers can rely on the result summing to one.
+    total_fair = sum(fair)
+    return [p / total_fair for p in fair]
+
+
+def devig(probs: Sequence[float], method: str = DEFAULT_DEVIG_METHOD) -> list[float]:
+    """Remove the vig from a set of implied probabilities."""
+    if method == POWER:
+        return devig_power(probs)
+    if method == MULTIPLICATIVE:
+        return devig_multiplicative(probs)
+    raise OddsError(f"unknown de-vig method {method!r}; choose from {', '.join(DEVIG_METHODS)}")
+
+
+def devig_american(
+    odds: Iterable[float], method: str = DEFAULT_DEVIG_METHOD
+) -> list[float]:
     """De-vig straight from American prices: [-110, -110] -> [0.5, 0.5]."""
-    return devig([american_to_prob(o) for o in odds])
+    return devig([american_to_prob(o) for o in odds], method=method)
+
+
+def devig_k(probs: Sequence[float]) -> float:
+    """The exponent the power method solved for. 1.0 means a vig-free market."""
+    values = _validated(probs)
+    fair = devig_power(values)
+    import math
+
+    # Recover k from any side; the largest is the numerically steadiest.
+    index = max(range(len(values)), key=lambda i: values[i])
+    return math.log(fair[index]) / math.log(values[index])
 
 
 def ev_per_100(prob: float, odds: float) -> float:

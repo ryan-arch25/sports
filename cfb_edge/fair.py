@@ -19,9 +19,11 @@ from typing import Iterable, Sequence
 from cfb_edge.config import Config
 from cfb_edge.models import BookMarket, Game, Outcome, outcomes_signature
 from cfb_edge.oddsmath import (
+    DEFAULT_DEVIG_METHOD,
     OddsError,
     american_to_prob,
     devig,
+    devig_multiplicative,
     hold,
     prob_to_american,
 )
@@ -76,17 +78,24 @@ def _usable(outcomes: Sequence[Outcome]) -> bool:
     return True
 
 
-def _devig_outcomes(outcomes: Sequence[Outcome]) -> tuple[list[float], float]:
+def _devig_outcomes(
+    outcomes: Sequence[Outcome], method: str = DEFAULT_DEVIG_METHOD
+) -> tuple[list[float], float]:
     raw = [american_to_prob(o.price) for o in outcomes]
-    return devig(raw), hold(raw)
+    return devig(raw, method=method), hold(raw)
 
 
 def _fair_from_outcomes(
-    book: str, market: str, outcomes: Sequence[Outcome], source: str, group: str | None = None
+    book: str,
+    market: str,
+    outcomes: Sequence[Outcome],
+    source: str,
+    group: str | None = None,
+    method: str = DEFAULT_DEVIG_METHOD,
 ) -> FairLine | None:
     if not _usable(outcomes):
         return None
-    fair_probs, book_hold = _devig_outcomes(outcomes)
+    fair_probs, book_hold = _devig_outcomes(outcomes, method)
     sides = tuple(
         FairSide(name=o.key, point=o.point, fair_prob=p, price=o.price)
         for o, p in zip(outcomes, fair_probs)
@@ -96,12 +105,14 @@ def _fair_from_outcomes(
     )
 
 
-def fair_from_book(book_market: BookMarket, source: str) -> FairLine | None:
+def fair_from_book(
+    book_market: BookMarket, source: str, method: str = DEFAULT_DEVIG_METHOD
+) -> FairLine | None:
     """De-vig one book's two-sided market into fair probabilities."""
     if book_market is None:
         return None
     return _fair_from_outcomes(
-        book_market.book, book_market.market, book_market.outcomes, source
+        book_market.book, book_market.market, book_market.outcomes, source, method=method
     )
 
 
@@ -130,6 +141,7 @@ def _fair_from_consensus_quotes(
     quotes: Sequence[tuple[str, tuple[Outcome, ...]]],
     min_books: int = 2,
     group: str | None = None,
+    method: str = DEFAULT_DEVIG_METHOD,
 ) -> FairLine | None:
     """Average the de-vigged probabilities of every book on the same number."""
     usable = [(book, outcomes) for book, outcomes in quotes if _usable(outcomes)]
@@ -142,14 +154,16 @@ def _fair_from_consensus_quotes(
     fair_by_name: dict[str, list[float]] = {name: [] for name in names}
     raw_by_name: dict[str, list[float]] = {name: [] for name in names}
     for _, outcomes in chosen:
-        fair_probs, _ = _devig_outcomes(outcomes)
+        fair_probs, _ = _devig_outcomes(outcomes, method)
         for outcome, fair_prob in zip(outcomes, fair_probs):
             fair_by_name[outcome.key].append(fair_prob)
             raw_by_name[outcome.key].append(american_to_prob(outcome.price))
 
-    # Averaging de-vigged probabilities can drift off 1.0; renormalize.
+    # Averaging de-vigged probabilities can drift off 1.0. This is a rescale of
+    # numbers the vig has already been taken out of, not another de-vig, so it
+    # stays proportional whatever method produced them.
     averaged = [fmean(fair_by_name[name]) for name in names]
-    normalized = devig(averaged)
+    normalized = devig_multiplicative(averaged)
     raw_avg = [fmean(raw_by_name[name]) for name in names]
 
     points = {o.key: o.point for o in reference}
@@ -168,13 +182,17 @@ def _fair_from_consensus_quotes(
 
 
 def fair_from_consensus(
-    markets: Sequence[BookMarket], min_books: int = 2
+    markets: Sequence[BookMarket],
+    min_books: int = 2,
+    method: str = DEFAULT_DEVIG_METHOD,
 ) -> FairLine | None:
     """Consensus across whole two-sided markets (game markets)."""
     if not markets:
         return None
     quotes = [(bm.book, bm.outcomes) for bm in markets]
-    return _fair_from_consensus_quotes(markets[0].market, quotes, min_books=min_books)
+    return _fair_from_consensus_quotes(
+        markets[0].market, quotes, min_books=min_books, method=method
+    )
 
 
 def _consensus_candidates(cfg: Config) -> Iterable[str]:
@@ -196,7 +214,9 @@ def fair_lines(game: Game, market: str, cfg: Config) -> dict[str | None, FairLin
         for group, outcomes in book_market.groups().items():
             if group in sharp_groups:
                 continue  # an earlier, sharper book already priced this group
-            line = _fair_from_outcomes(book_key, market, outcomes, logical, group=group)
+            line = _fair_from_outcomes(
+                book_key, market, outcomes, logical, group=group, method=cfg.devig_method
+            )
             if line is not None:
                 sharp_groups[group] = line
 
@@ -216,7 +236,8 @@ def fair_lines(game: Game, market: str, cfg: Config) -> dict[str | None, FairLin
         if group in sharp_groups:
             continue
         line = _fair_from_consensus_quotes(
-            market, quotes, min_books=cfg.min_consensus_books, group=group
+            market, quotes, min_books=cfg.min_consensus_books, group=group,
+            method=cfg.devig_method,
         )
         if line is not None:
             sharp_groups[group] = line

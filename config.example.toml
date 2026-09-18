@@ -118,3 +118,11 @@ refresh_minutes = 30.0
 # The lowest edge sent to the browser. The page's filter starts at `min_edge`
 # above and can be dialled down to this. Raising it makes the payload smaller.
 floor_edge = 0.0
+
+[devig]
+# How the vig comes out of a two-sided market.
+#   power          - solve for k where sum(p ** k) = 1 (default). Takes the
+#                    margin mostly off the longshot, which is where books put it.
+#   multiplicative - divide each side by the sum. Simpler, but leaves longshots
+#                    overstated. Useful for comparing against the default.
+method = "power"
