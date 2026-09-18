@@ -9,7 +9,7 @@ from typing import Any, Sequence
 
 from cfb_edge.edges import EdgeRow
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS observations (
     status            TEXT,
     above_min_edge    INTEGER,
     translated_from   REAL,
+    translation_source TEXT,
     note              TEXT,
     UNIQUE (run_id, event_id, market, side, dk_point)
 );
@@ -77,7 +78,10 @@ CREATE TABLE IF NOT EXISTS bets (
     book              TEXT,
     fair_prob         REAL,
     edge_pct          REAL,
-    note              TEXT
+    note              TEXT,
+    person            TEXT,
+    result            TEXT,
+    settled_at_utc    TEXT
 );
 
 -- One row per alert actually sent, so the same price is never announced twice.
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bets_event ON bets (event_id, market, side);
+CREATE INDEX IF NOT EXISTS idx_bets_person ON bets (person);
 CREATE INDEX IF NOT EXISTS idx_obs_event ON observations (event_id, market, side);
 CREATE INDEX IF NOT EXISTS idx_obs_kickoff ON observations (commence_time_utc);
 CREATE INDEX IF NOT EXISTS idx_obs_run ON observations (run_id);
@@ -165,6 +170,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns that later versions introduced, leaving older rows intact."""
     for table, column, decl in (
         ("observations", "translated_from", "REAL"),
+        ("observations", "translation_source", "TEXT"),
+        ("bets", "person", "TEXT"),
+        ("bets", "result", "TEXT"),
+        ("bets", "settled_at_utc", "TEXT"),
     ):
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if existing and column not in existing:
@@ -224,7 +233,7 @@ def log_run(
             row.sharp_source, row.sharp_books, row.sharp_point, row.sharp_price,
             row.sharp_hold, row.fair_prob, row.fair_american, row.edge_pct, row.ev_per_100,
             row.stake, row.status, int(_is_bet(row, min_edge_pct)), row.translated_from,
-            row.note,
+            row.translation_source, row.note,
         ))
     conn.executemany(
         """
@@ -232,8 +241,9 @@ def log_run(
             run_id, observed_at_utc, event_id, commence_time_utc, home_team, away_team,
             market, side, dk_point, dk_price, dk_prob, sharp_source, sharp_books,
             sharp_point, sharp_price, sharp_hold, fair_prob, fair_american, edge_pct,
-            ev_per_100, stake, status, above_min_edge, translated_from, note
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ev_per_100, stake, status, above_min_edge, translated_from,
+            translation_source, note
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         payload,
     )

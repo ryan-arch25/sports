@@ -288,35 +288,35 @@ class TestEstimatedTable:
         return EstimatedTable(**kwargs)
 
     def test_a_plain_half_point_is_the_base_value(self):
-        assert self.table().step_value(SPREAD, -5.0, -5.5) == pytest.approx(0.005)
+        assert self.table().step_value(SPREAD, -5.0, -5.5) == pytest.approx(0.015)
 
     @pytest.mark.parametrize("low,high", [(-3.0, -3.5), (-2.5, -3.0), (3.0, 3.5), (6.5, 7.0)])
-    def test_a_step_touching_a_key_number_is_doubled(self, low, high):
-        assert self.table().step_value(SPREAD, low, high) == pytest.approx(0.010)
+    def test_a_step_touching_a_key_number_costs_more(self, low, high):
+        assert self.table().step_value(SPREAD, low, high) == pytest.approx(0.035, abs=1e-4)
 
     def test_totals_are_flat(self):
         table = self.table()
-        assert table.step_value(TOTAL, 47.0, 47.5) == pytest.approx(0.004)
-        assert table.step_value(TOTAL, 3.0, 3.5) == pytest.approx(0.004)  # no key numbers
+        assert table.step_value(TOTAL, 47.0, 47.5) == pytest.approx(0.020)
+        assert table.step_value(TOTAL, 3.0, 3.5) == pytest.approx(0.020)  # no key numbers
 
     def test_a_move_adds_up_its_steps(self):
         # 3.0 -> 4.5 is three half points, one of which touches the 3.
-        assert self.table().move_value(SPREAD, -3.0, -4.5) == pytest.approx(0.020)
+        assert self.table().move_value(SPREAD, -3.0, -4.5) == pytest.approx(0.06495)
 
     def test_a_total_move_adds_up(self):
-        assert self.table().move_value(TOTAL, 53.0, 51.5) == pytest.approx(0.012)
+        assert self.table().move_value(TOTAL, 53.0, 51.5) == pytest.approx(0.060)
 
     def test_no_move_is_worth_nothing(self):
         assert self.table().move_value(TOTAL, 53.0, 53.0) == 0.0
 
     def test_a_number_off_the_half_point_grid_is_prorated(self):
         # A quarter point is half of a half-point step.
-        assert self.table().move_value(TOTAL, 53.0, 52.75) == pytest.approx(0.002)
+        assert self.table().move_value(TOTAL, 53.0, 52.75) == pytest.approx(0.010)
 
     def test_direction_follows_the_side(self):
         table = self.table()
-        assert table.translate(TOTAL, OVER, 0.50, 53.0, 51.5) == pytest.approx(0.512)
-        assert table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5) == pytest.approx(0.488)
+        assert table.translate(TOTAL, OVER, 0.50, 53.0, 51.5) == pytest.approx(0.560)
+        assert table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5) == pytest.approx(0.440)
 
     def test_the_sides_stay_complementary(self):
         table = self.table()
@@ -324,11 +324,11 @@ class TestEstimatedTable:
         under = table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5)
         assert over + under == pytest.approx(1.0)
 
-    def test_buying_off_three_is_worth_double(self):
+    def test_buying_off_three_costs_the_key_multiple(self):
         table = self.table()
         key = table.translate(SPREAD, FAVORITE, 0.50, -3.0, -2.5) - 0.50
         plain = table.translate(SPREAD, FAVORITE, 0.50, -5.0, -4.5) - 0.50
-        assert key == pytest.approx(2 * plain)
+        assert key == pytest.approx(table.key_multiplier * plain)
 
     def test_the_same_number_is_left_alone(self):
         assert self.table().translate(SPREAD, FAVORITE, 0.62, -3.0, -3.0) == pytest.approx(0.62)
@@ -362,8 +362,8 @@ class TestEstimatedTable:
     def test_it_shows_a_chart(self):
         rows = self.table().half_point_values(SPREAD, max_number=8)
         by_line = {r["reference"]: r["prob_gain"] for r in rows}
-        assert by_line[3.0] == pytest.approx(0.010)
-        assert by_line[5.0] == pytest.approx(0.005)
+        assert by_line[3.0] == pytest.approx(0.035, abs=1e-4)
+        assert by_line[5.0] == pytest.approx(0.015)
         assert all(r["sample"] is None for r in rows)
 
 

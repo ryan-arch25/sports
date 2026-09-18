@@ -294,6 +294,61 @@ def create_app(
     async def api_state(_: None = Depends(require_auth)) -> JSONResponse:
         return JSONResponse(dashboard.state.as_dict())
 
+    def log_connection():
+        from cfb_edge.store import connect
+
+        return connect(cfg.db_path)
+
+    @app.get("/api/log")
+    async def api_log(_: None = Depends(require_auth)) -> JSONResponse:
+        from cfb_edge.web.betlog import log_payload
+
+        conn = log_connection()
+        try:
+            return JSONResponse(log_payload(conn))
+        finally:
+            conn.close()
+
+    @app.post("/api/log")
+    async def api_log_add(request: Request, _: None = Depends(require_auth)) -> JSONResponse:
+        from cfb_edge.web.betlog import BetLogError, add_bet, log_payload
+
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001 - a bad body is a bad request, not a crash
+            raise HTTPException(status_code=400, detail="expected a JSON body") from None
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="expected a JSON object")
+
+        conn = log_connection()
+        try:
+            add_bet(conn, payload)
+            return JSONResponse(log_payload(conn))
+        except BetLogError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        finally:
+            conn.close()
+
+    @app.post("/api/log/settle")
+    async def api_log_settle(request: Request, _: None = Depends(require_auth)) -> JSONResponse:
+        from cfb_edge.web.betlog import BetLogError, log_payload, settle
+
+        try:
+            payload = await request.json()
+            bet_id = int(payload["bet_id"])
+            result = str(payload["result"])
+        except Exception:  # noqa: BLE001 - any malformed body is a bad request
+            raise HTTPException(status_code=400, detail="expected bet_id and result") from None
+
+        conn = log_connection()
+        try:
+            settle(conn, bet_id, result)
+            return JSONResponse(log_payload(conn))
+        except BetLogError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        finally:
+            conn.close()
+
     @app.post("/api/refresh")
     async def api_refresh(_: None = Depends(require_auth)) -> JSONResponse:
         refreshed, message = await dashboard.manual_refresh()

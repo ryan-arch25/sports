@@ -186,12 +186,18 @@ lines:
 
 | | |
 | --- | --- |
-| Spread, ordinary half point | 0.5 points of win probability |
-| Spread, half point touching 3 or 7 | doubled, so 1.0 |
-| Total, half point | 0.4 points, quoted for totals between 45 and 60 |
+| Spread, ordinary half point | 1.5 points of win probability |
+| Spread, half point touching 3 or 7 | ×2.33, so about 3.5 |
+| Total, half point | 2.0 points |
+
+These are not measured from your results, but they agree with two independent
+checks: a normal approximation (σ ≈ 13.5 on margins, ≈ 10.5 on totals) and a
+distribution built from real games. All five are config keys under
+`[halfpoint]`, so a table you build later replaces them per line and you can
+change them meanwhile without touching code.
 
 Every line priced this way is labelled **`est.`** — an amber pill in the Edges
-table, a small `est.` in the Slate's DraftKings cells, `translation_source =
+table, one tag per row in the Slate's own column, `translation_source =
 estimated` in the CSV and JSON, and `est` beside the book name in the terminal.
 The run summary counts them separately, so a scan says how many of its prices
 came from real results and how many from the chart.
@@ -199,15 +205,6 @@ came from real results and how many from the chart.
 A built table always wins per line, and the estimate only catches what it
 refuses — so building the real thing never costs coverage. Turn the fallback
 off with `[halfpoint] fallback = "none"` to go back to flagging.
-
-> **These values look low.** A normal approximation with the usual spreads
-> (σ ≈ 13.5 points on margins, ≈ 10.5 on totals) puts an ordinary half point
-> nearer **1.5** points of win probability on a spread and **1.9** on a total,
-> and a distribution built from real games agrees with that within noise. The
-> supplied figures are roughly a third of it, and off the key numbers about a
-> quarter. Under-adjusting is not symmetric: a line on a *worse* number gets
-> under-penalised, which can leave a bet looking +EV when it is not. All five
-> numbers are config keys — raise them in `config.toml` without touching code.
 
 **The measured version.** The table is built from results you download:
 
@@ -334,7 +331,26 @@ priced exactly like game markets — Pinnacle first, then Circa, then consensus 
 except each player is their own two-sided market. Pinnacle's college prop
 coverage is thin, so expect a lot of consensus pricing and `no sharp line`.
 
-## Logging bets and measuring CLV
+## The Log tab
+
+Anyone with the password can record a bet from the dashboard — who placed it,
+which game, which side, the price they got, the stake and the date — and mark it
+won, lost or pushed later. The picks come from the current board, so the market
+and side are exact rather than typed, which is what lets the closing line be
+found afterwards.
+
+The top of the tab carries the group's running record, total profit, ROI and
+average closing-line value, then the same broken down per person, most
+profitable first. CLV compares the price you logged to **the sharp book's last
+price before kickoff**, taken from the scan history in the same database, and is
+reported in points of implied probability: positive means the market moved your
+way after you bet.
+
+It all lives in the `bets` table of the SQLite database, so it belongs on the
+volume. Without one it is wiped on every redeploy along with the scan history —
+which would also take the closing lines CLV depends on.
+
+## Logging bets from the terminal
 
 ```bash
 cfb-edge bets add --event "Michigan" --market spreads --side michigan \
@@ -484,14 +500,27 @@ above and the price below, and the sharp cells name the book they came from, so
 you can see at a glance whether "sharp" here means Pinnacle, Circa or a
 consensus of the soft books.
 
-DraftKings cells are coloured green when DK is the better side of that market
-and red when it is worse. The rule is the number first — a half point is worth
-more than a cent or two — and the price when both books are on the same number.
-A positive edge appears beneath the price. Games with no sharp line, or no
-DraftKings market, show dashes rather than disappearing.
+DraftKings cells are coloured by the **edge**, which weighs the number and the
+juice together: green at +0.5% or better, red at −0.5% or worse, grey in
+between. A better number bought with much worse juice is not green, because it
+is not a better bet. The edge itself is printed in the cell only when it clears
++0.5%, so the numbers on screen are the ones worth reading.
 
-The search box filters by team name. On a phone the table scrolls sideways with
-the team column pinned, so you never lose track of which side you are reading.
+Because the edge is measured against the *fair* price rather than the sharp
+book's posted one, a DraftKings price that merely matches Pinnacle reads red —
+it is telling you there is no value there, not that DK is out of line. Widen
+`NEUTRAL_BAND_PCT` in `cfb_edge/web/slate.py` if you would rather see more grey.
+
+A market neither book posts — a moneyline on a 58-point spread, say — reads
+**no line** in light text rather than a dash. Rows priced through the published
+half-point estimate carry one **est.** tag in a column of their own.
+
+A **Best bets** strip sits at the top: the five biggest edges across the whole
+board, each linking down to its game. If nothing clears 1% it says so.
+
+The search box filters by team name. On a phone each game becomes a card and
+each side reads like a betting slip, with the market on the left and DraftKings
+against the sharp book on the right.
 
 A **Refresh** button forces a scan, rate-limited to once every 30 seconds. It is
 usually free: the odds cache means a refresh inside `max_age_minutes` replays
@@ -620,7 +649,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-595 tests, no network access required. The odds conversion and de-vig math are
+663 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -629,6 +658,7 @@ guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging an
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
 (`test_web.py`), the Slate view's comparisons and grouping (`test_slate.py`),
+the shared bet log and its CLV (`test_betlog.py`),
 the container entrypoint that prepares a mounted volume (`test_entrypoint.py`),
 and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).
@@ -652,8 +682,8 @@ can be exercised deterministically — it is scaffolding, not data.
   built from whatever seasons you downloaded. It narrows the gap on a
   half-point difference; it does not close it.
 - The published fallback is weaker still: a flat value per half point with no
-  distribution behind it, and with default figures that look about three times
-  too small (see the note above). Rows priced from it carry `est.` precisely so
+  distribution behind it, so it has no idea that a particular game's margins are
+  unusually spread out or tight. Rows priced from it carry `est.` precisely so
   they can be discounted.
 - Props are priced with the same machinery as game markets, but sharp coverage
   is thinner and DK's prop hold is much larger, so edges there need more

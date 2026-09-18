@@ -14,12 +14,16 @@ from typing import Any, Iterable, Sequence
 
 from cfb_edge.edges import EdgeRow
 from cfb_edge.models import Game
-from cfb_edge.oddsmath import OddsError, american_to_prob, format_american
+from cfb_edge.oddsmath import format_american
 from cfb_edge.report import ET, kickoff_et
 
 BETTER = "better"
 WORSE = "worse"
-SAME = "same"
+NEUTRAL = "neutral"
+
+# Edges inside this band are noise rather than an opinion, so the cell stays
+# grey and keeps its number to itself.
+NEUTRAL_BAND_PCT = 0.5
 
 # Which market each of a game's two display rows shows, in the order a
 # sportsbook lists them: away team on top with the Over, home team beneath with
@@ -30,29 +34,20 @@ TOTAL_SIDES = ("Over", "Under")
 def compare_side(row: EdgeRow | None) -> str | None:
     """Is DraftKings' offer better than the sharp book's on this side?
 
-    The number decides it when the books are on different ones, because half a
-    point is worth more than a cent or two of price. When they agree on the
-    number the price decides: a lower implied probability means DraftKings is
-    paying more for the same outcome.
+    The verdict is the edge, which already carries both halves of the question:
+    the number gap, converted through the half-point table, and the juice. A
+    better number bought with much worse juice is not a better bet, and colouring
+    it green would say it was.
+
+    None means there is nothing to compare against -- no sharp line, so no edge.
     """
-    if row is None or row.sharp_price is None:
+    if row is None or row.edge_pct is None:
         return None
-    diff = row.line_diff
-    if diff:
-        return BETTER if diff > 0 else WORSE
-    # A consensus price is an average, so it can miss an identical DraftKings
-    # price by a rounding hair. Never colour a cell when the two prices on
-    # screen read the same.
-    if round(float(row.dk_price)) == round(float(row.sharp_price)):
-        return SAME
-    try:
-        dk = american_to_prob(row.dk_price)
-        sharp = american_to_prob(row.sharp_price)
-    except OddsError:
-        return None
-    if abs(dk - sharp) < 1e-9:
-        return SAME
-    return BETTER if dk < sharp else WORSE
+    if row.edge_pct >= NEUTRAL_BAND_PCT:
+        return BETTER
+    if row.edge_pct <= -NEUTRAL_BAND_PCT:
+        return WORSE
+    return NEUTRAL
 
 
 def _number(market: str, row: EdgeRow | None, prefix: str = "") -> str:
@@ -79,13 +74,17 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
         "number": _number(market, row, prefix),
         "price": format_american(row.dk_price),
         "sharp_number": _sharp_number(market, row, prefix),
-        "sharp_price": format_american(row.sharp_price),
+        # Empty rather than a dash: the page decides how to say "nothing here".
+        "sharp_price": "" if row.sharp_price is None else format_american(row.sharp_price),
         "sharp_source": row.sharp_source or "",
         "line_diff": row.line_diff,
         "edge_pct": None if row.edge_pct is None else round(row.edge_pct, 2),
         "verdict": compare_side(row),
         "translated": row.status == "translated",
         "estimated": row.is_estimated,
+        # The page prints the number only when it is worth reading.
+        "show_edge": row.edge_pct is not None and row.edge_pct >= NEUTRAL_BAND_PCT,
+        "has_sharp": row.sharp_price is not None,
     }
 
 
@@ -116,7 +115,7 @@ def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
     """A game as two display rows: away with the Over, home with the Under."""
     sides = []
     for team, total_side in ((game.away_team, "Over"), (game.home_team, "Under")):
-        sides.append({
+        side = {
             "label": team,
             "total_label": total_side,
             "spread": serialize_cell("spreads", index.get(game.event_id, "spreads", team)),
@@ -124,7 +123,14 @@ def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
                 "totals", index.get(game.event_id, "totals", total_side), f"{total_side[0]} "
             ),
             "h2h": serialize_cell("h2h", index.get(game.event_id, "h2h", team)),
-        })
+        }
+        # One `est.` per row rather than one per cell: it is a property of how
+        # the row was priced, not of any single market.
+        side["estimated"] = any(
+            cell is not None and cell["estimated"]
+            for cell in (side["spread"], side["total"], side["h2h"])
+        )
+        sides.append(side)
     local = game.commence_time.astimezone(ET)
     return {
         "event_id": game.event_id,

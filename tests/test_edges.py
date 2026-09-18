@@ -374,9 +374,9 @@ class TestEstimatedPricing:
         rows = {r.side: r for r in evaluate_market(
             self.moved_total(), "totals", cfg, estimated_table(cfg)
         )}
-        # Pinnacle -105/-105 is a coin flip; three half points at 0.4 each.
-        assert rows["Over"].fair_prob == pytest.approx(0.512)
-        assert rows["Under"].fair_prob == pytest.approx(0.488)
+        # Pinnacle -105/-105 is a coin flip; three half points at 2.0 each.
+        assert rows["Over"].fair_prob == pytest.approx(0.560)
+        assert rows["Under"].fair_prob == pytest.approx(0.440)
 
     def test_the_note_says_where_the_price_came_from(self, cfg):
         from cfb_edge.halfpoint import estimated_table

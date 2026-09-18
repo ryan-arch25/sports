@@ -87,7 +87,7 @@ class TestRun:
         run(tmp_path, "--limit", "1", min_edge="0")
         out = capsys.readouterr().out
         assert "1 bet(s) at >= 0% edge" in out
-        assert "Michigan Wolverines +6.5" in out
+        assert "Over 51.5" in out  # the best edge on the sample board
         assert "Georgia Bulldogs ML" not in out
 
     def test_unknown_market_is_a_usage_error(self, tmp_path, capsys):
@@ -160,7 +160,7 @@ class TestSqliteLog:
         assert len(runs) == 1
         assert runs[0]["n_games"] == 4
         assert runs[0]["n_rows"] == 20
-        assert runs[0]["n_bets"] == 4
+        assert runs[0]["n_bets"] == 5
         assert runs[0]["source"] == "cache-file"
         observations = conn.execute("SELECT * FROM observations").fetchall()
         assert len(observations) == 20
@@ -349,7 +349,7 @@ class TestSubcommands:
         assert main(["halfpoint", "show", "--table", str(tmp_path / "none.json")]) == 0
         out = capsys.readouterr().out
         assert "published estimate, not measured" in out
-        assert "0.5 pts of win probability per half point" in out
+        assert "1.5 pts of win probability per half point" in out
 
     def test_halfpoint_show_without_a_table_or_a_fallback(self, tmp_path, capsys):
         config = tmp_path / "config.toml"

@@ -1,183 +1,283 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f7a4d'/%3E%3Cpath d='M4 11l3-4 2.5 2.5L12 5' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%235b87c7'/%3E%3Cpath d='M4 11l3-4 2.5 2.5L12 5' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>{{title}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f6f7f9;
+    --bg: #16181b;
+    --panel: #1d2024;
+    --panel-2: #22262b;
+    --line: #2d3238;
+    --line-soft: #24282d;
+    --ink: #e9ebee;
+    --ink-2: #c3c8ce;
+    --muted: #8b939d;
+    --accent: #5b87c7;
+    --accent-ink: #ffffff;
+    --good: #6fa882;
+    --bad: #c4756c;
+    --warn: #bfa14a;
+    --radius: 10px;
+    --gap: 22px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f6f4;
     --panel: #ffffff;
-    --ink: #14171a;
-    --muted: #5b6570;
-    --line: #dfe3e8;
-    --line-soft: #eceef1;
-    --accent: #1f7a4d;
-    --accent-soft: #e6f4ec;
-    --danger: #b3261e;
-    --danger-soft: #fdecea;
-    --warn: #8a6100;
+    --panel-2: #f2f3f4;
+    --line: #dfe1e4;
+    --line-soft: #ececee;
+    --ink: #1a1c1f;
+    --ink-2: #3c4148;
+    --muted: #6b7280;
+    --accent: #2f5fb0;
+    --accent-ink: #ffffff;
+    --good: #2f7a52;
+    --bad: #ab4a41;
+    --warn: #8a6a16;
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14171a; --panel: #1d2126; --ink: #eceff2; --muted: #97a1ac;
-      --line: #2d333a; --line-soft: #23282e; --accent: #4ec98a; --accent-soft: #17311f;
-      --danger: #ef6b62; --danger-soft: #35201e; --warn: #d9a441;
-    }
-  }
+
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 16px 48px; }
-  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
-           justify-content: space-between; margin-bottom: 4px; }
-  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
-  .stamp { color: var(--muted); font-size: 13px; }
-  .stamp strong { color: var(--ink); font-weight: 600; }
-  .header-actions { display: flex; gap: 8px; align-items: center; }
-  button {
-    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px;
-    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  h1, h2, h3, th, .tab, .day, .stat-label {
+    font-family: "Barlow Condensed", Inter, ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0.01em;
+  }
+  .num, .mono, td.odds, input, select {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;
+           justify-content: space-between; padding: 26px 0 18px; }
+  h1 { margin: 0; font-size: 26px; font-weight: 600; line-height: 1.1; }
+  .stamp { margin-top: 5px; color: var(--muted); font-size: 13px; }
+  .stamp strong { color: var(--ink-2); font-weight: 500; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+
+  button, .btn {
+    font: 500 13px/1 Inter, sans-serif; padding: 9px 14px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
     cursor: pointer;
   }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button:disabled { opacity: 0.5; cursor: default; }
+  button:hover:not(:disabled) { border-color: var(--muted); color: var(--ink); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); color: var(--accent-ink); }
   form.inline { display: inline; }
 
-  .tabs { display: flex; gap: 4px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
+  nav.tabs {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+  }
+  nav.tabs .wrap { display: flex; gap: 2px; }
   .tab {
-    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
-    background: none; padding: 8px 14px; font-size: 14px; color: var(--muted);
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 12px 16px; font-size: 16px; font-weight: 500; color: var(--muted);
   }
   .tab:hover:not(.active) { color: var(--ink); border-color: var(--line); }
-  .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
   .view[hidden] { display: none; }
-
-  .day { margin: 22px 0 8px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-  .day:first-child { margin-top: 12px; }
-  .slate-table { margin-bottom: 4px; }
-  .slate-table tbody { border-top: 1px solid var(--line); }
-  .slate-table tbody:first-of-type { border-top: 0; }
-  .slate-table td { border-bottom: 0; padding: 6px 9px; vertical-align: top; }
-  .slate-table tbody tr:first-child td { padding-top: 10px; }
-  .slate-table tbody tr:last-child td { padding-bottom: 10px; }
-  .slate-table tbody:hover td { background: var(--line-soft); }
-  .time { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
-  .team { white-space: normal; }
-  .odds { line-height: 1.25; }
-  .odds .price { display: block; font-size: 11px; color: var(--muted); }
-  .odds.better, .odds.worse { border-radius: 6px; }
-  .odds.better { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .odds.worse { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-  .odds.better .price, .odds.worse .price { color: inherit; opacity: 0.8; }
-  .odds .edge {
-    display: block; font-size: 11px; font-weight: 700; color: var(--accent);
-  }
-  .odds.empty { color: var(--muted); }
-  .legend { margin-top: 10px; color: var(--muted); font-size: 12px; }
-  .legend b { font-weight: 600; }
-  .legend .swatch {
-    display: inline-block; padding: 0 5px; border-radius: 4px; font-weight: 600;
-  }
-  .legend .swatch.better { background: var(--accent-soft); color: var(--accent); }
-  .legend .swatch.worse { background: var(--danger-soft); color: var(--danger); }
+  section.view { padding-top: var(--gap); padding-bottom: 56px; }
 
   .banner {
-    margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
-    border: 1px solid var(--danger); background: var(--danger-soft); color: var(--danger);
+    margin: 0 0 var(--gap); padding: 12px 14px; border-radius: var(--radius);
+    font-size: 13px; border: 1px solid var(--bad); color: var(--bad);
   }
-  .banner.info { border-color: var(--line); background: var(--panel); color: var(--muted); }
+  .banner.info { border-color: var(--line); color: var(--muted); }
   .banner[hidden] { display: none; }
 
-  .controls {
-    display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: flex-end;
-    margin: 18px 0 14px; padding: 14px 16px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-  }
-  .field { display: flex; flex-direction: column; gap: 5px; }
-  .field > label { font-size: 12px; color: var(--muted); text-transform: uppercase;
-                   letter-spacing: 0.04em; }
-  select, input[type="number"] {
-    font: inherit; font-size: 14px; padding: 6px 10px; color: var(--ink);
-    background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
-  }
-  input[type="number"] { width: 92px; }
-  .count { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 
-  .table-scroll { overflow-x: auto; border: 1px solid var(--line);
-                  border-radius: 10px; background: var(--panel); }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: 9px 9px; text-align: left; white-space: nowrap;
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 18px 26px; align-items: flex-end;
+    margin-bottom: var(--gap); padding: 18px 20px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label, .stat-label {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  select, input {
+    font-size: 14px; padding: 8px 11px; color: var(--ink);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  }
+  select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type="number"] { width: 104px; }
+  input[type="search"], input[type="text"] { min-width: 180px; }
+  .count { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+  .table-scroll { overflow-x: auto; background: var(--panel);
+                  border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 12px 10px; text-align: left; white-space: nowrap;
            border-bottom: 1px solid var(--line-soft); }
   th {
-    position: sticky; top: 0; z-index: 1; background: var(--panel);
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line);
+    /* .table-scroll is the sticky containing block (overflow-x: auto), so this
+       offset is measured inside it -- any value but 0 pushes the header down
+       over the first row. The tab bar does the page-level sticking. */
+    position: sticky; top: 0; z-index: 5; background: var(--panel);
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); border-bottom: 1px solid var(--line);
   }
   tbody tr:last-child td { border-bottom: 0; }
-  tbody tr:hover td { background: var(--line-soft); }
   td.num, th.num { text-align: right; }
-  td.game { white-space: normal; min-width: 160px; }
-  td.sharp { line-height: 1.25; }
-  td.sharp .src { display: block; font-size: 11px; color: var(--muted); }
-  .edge { font-weight: 600; color: var(--accent); }
-  .better { color: var(--accent); font-weight: 600; }
-  .worse { color: var(--danger); font-weight: 600; }
-  .pill {
-    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; color: var(--accent);
-    background: var(--accent-soft); border: 1px solid var(--accent);
-  }
-  .pill.est { color: var(--warn); background: none; border-color: var(--warn); }
-  .odds .est-mark { font-size: 10px; font-weight: 600; color: var(--warn); margin-left: 3px; }
+  td.team, td.game { white-space: normal; }
+  /* Without a floor these squeeze to one word per line next to the numbers. */
+  td.game { min-width: 180px; }
+  td.team { min-width: 175px; }
   .sub { color: var(--muted); font-size: 12px; }
-  .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
-  footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
-  footer code { font-size: 11px; }
 
-  @media (max-width: 720px) {
-    .slate-table thead { display: table-header-group; }
-    .slate-table, .slate-table tbody, .slate-table tr, .slate-table td { display: revert; }
-    .slate-table td { display: table-cell; text-align: right; white-space: nowrap; }
-    .slate-table td::before { content: none; }
-    .slate-table td.team { text-align: left; white-space: normal; font-size: 13px; }
-    .slate-scroll { overflow-x: visible; }
-    .slate-scroll .table-scroll { overflow-x: auto; }
-    /* Keep the teams in view while the markets scroll under the thumb. */
-    .slate-table td.team, .slate-table th:first-child {
-      position: sticky; left: 0; z-index: 2; background: var(--panel);
-      box-shadow: 1px 0 0 var(--line-soft);
-    }
-    .slate-table tbody:hover td.team { background: var(--line-soft); }
-    .wrap { padding: 16px 12px 40px; }
-    .count { width: 100%; margin-left: 0; text-align: left; }
-    .table-scroll { overflow-x: visible; }
-    thead { display: none; }
+  .good { color: var(--good); }
+  .bad { color: var(--bad); }
+  .edge { font-weight: 600; }
+  .pill {
+    display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: 999px;
+    font: 500 11px/1.5 Inter, sans-serif; color: var(--warn); border: 1px solid var(--warn);
+  }
+  .tag { font: 500 11px/1 Inter, sans-serif; color: var(--warn); }
+
+  .empty { padding: 48px 18px; text-align: center; color: var(--muted); }
+  footer { padding: 4px 0 40px; color: var(--muted); font-size: 12px; }
+
+  /* Best bets ------------------------------------------------------------ */
+  .best {
+    margin-bottom: var(--gap); border: 1px solid var(--accent); border-radius: var(--radius);
+    background: var(--panel);
+  }
+  .best h2 {
+    margin: 0; padding: 13px 18px; font-size: 15px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent);
+    border-bottom: 1px solid var(--line);
+  }
+  .best ol { margin: 0; padding: 6px 0; list-style: none; counter-reset: best; }
+  .best li { border-bottom: 1px solid var(--line-soft); }
+  .best li:last-child { border-bottom: 0; }
+  .best a {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline;
+    padding: 10px 18px; color: inherit; text-decoration: none;
+  }
+  .best a:hover { background: var(--panel-2); }
+  .best .who { color: var(--muted); font-size: 13px; min-width: 210px; }
+  .best .what { font-weight: 500; }
+  .best .price, .best .pct {
+    font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+  }
+  .best .pct { margin-left: auto; font-weight: 600; color: var(--good); }
+  .best .none { padding: 16px 18px; color: var(--muted); font-size: 14px; }
+
+  /* Slate ---------------------------------------------------------------- */
+  .day { margin: 30px 0 10px; font-size: 17px; font-weight: 600; }
+  .day:first-of-type { margin-top: 4px; }
+  /* Two header rows cannot share one sticky offset, and a slate has a table
+     per day, so its head stays put with the table. */
+  .slate-table th { position: static; }
+  .slate-table tbody { border-top: 1px solid var(--line); }
+  .slate-table tbody:first-of-type { border-top: 0; }
+  .slate-table td { border-bottom: 0; padding: 8px 13px; vertical-align: top; }
+  .slate-table tbody tr:first-child td { padding-top: 14px; }
+  .slate-table tbody tr:last-child td { padding-bottom: 14px; }
+  .slate-table tbody { scroll-margin-top: 110px; }
+  .time { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .team-name { font-size: 15px; font-weight: 500; }
+  .odds { line-height: 1.35; }
+  .odds .price { display: block; font-size: 12px; color: var(--muted); }
+  .odds.better { color: var(--good); }
+  .odds.worse { color: var(--bad); }
+  .odds.better .price, .odds.worse .price { color: inherit; opacity: 0.75; }
+  .odds .cell-edge { display: block; font-size: 12px; font-weight: 600; }
+  .odds.none { color: var(--muted); font-size: 13px; }
+  .legend { margin-top: 14px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+  .legend .key { color: var(--ink-2); }
+
+  /* Log ------------------------------------------------------------------ */
+  .stats { display: flex; flex-wrap: wrap; gap: 1px; margin-bottom: var(--gap);
+           background: var(--line); border: 1px solid var(--line);
+           border-radius: var(--radius); overflow: hidden; }
+  .stat { flex: 1 1 150px; padding: 16px 18px; background: var(--panel); }
+  .stat-value { margin-top: 5px; font-family: "IBM Plex Mono", monospace;
+                font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 500; }
+  .log-form { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
+  .log-form .field { flex: 0 1 auto; }
+  .log-form select { max-width: 320px; }
+  .result-btns { display: flex; gap: 5px; }
+  .result-btns button { padding: 5px 9px; font-size: 12px; }
+  .result-btns button.on { border-color: var(--accent); color: var(--accent); }
+  .r-won { color: var(--good); }
+  .r-lost { color: var(--bad); }
+  .r-push, .r-open { color: var(--muted); }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 0 16px; }
+    :root { --gap: 16px; }
+    header { padding: 18px 0 14px; }
+    h1 { font-size: 22px; }
+    .count { width: 100%; margin-left: 0; }
+    .table-scroll { overflow-x: visible; background: none; border: 0; border-radius: 0; }
+    th { display: none; }
     table, tbody, tr, td { display: block; width: 100%; }
-    tbody tr { padding: 12px 14px; border-bottom: 1px solid var(--line); }
-    tbody tr:hover td { background: none; }
-    td {
-      display: flex; gap: 12px; justify-content: space-between; align-items: baseline;
+
+    /* Edges: one card per bet, labelled like a slip. */
+    #view-edges tbody tr {
+      margin-bottom: 12px; padding: 14px 16px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: var(--radius);
+    }
+    #view-edges td {
+      display: flex; gap: 14px; justify-content: space-between; align-items: baseline;
       padding: 3px 0; border: 0; white-space: normal; text-align: right;
     }
-    td::before {
+    #view-edges td::before {
       content: attr(data-label); flex: 0 0 auto; text-align: left;
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.04em; color: var(--muted);
+      font: 500 11px/1.6 Inter, sans-serif; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted);
     }
-    td.game, td.pick {
-      display: block; text-align: left; font-size: 16px; font-weight: 600;
-      padding-bottom: 2px;
+    #view-edges td.game, #view-edges td.pick {
+      display: block; text-align: left; padding-bottom: 6px;
     }
-    td.game { color: var(--muted); font-size: 13px; font-weight: 500; }
-    td.game::before, td.pick::before { content: none; }
-    td.sharp { justify-content: space-between; }
-    td.sharp .src { display: inline; margin-left: 4px; }
+    #view-edges td.game { color: var(--muted); font-size: 13px; }
+    #view-edges td.pick { font-size: 17px; font-weight: 600; }
+    #view-edges td.game::before, #view-edges td.pick::before { content: none; }
+
+    /* Slate: a card per game, each side a three-line slip. */
+    .slate-table tbody {
+      margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line);
+      border-radius: var(--radius); border-top: 1px solid var(--line);
+    }
+    .slate-table tr {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px;
+      padding: 12px 16px; border-bottom: 1px solid var(--line-soft);
+    }
+    .slate-table tbody tr:last-child { border-bottom: 0; }
+    .slate-table td { padding: 2px 0; text-align: right; }
+    .slate-table td.team { grid-column: 1 / -1; text-align: left; padding-bottom: 6px; }
+    .slate-table td.odds::before {
+      content: attr(data-label); float: left;
+      font: 500 11px/1.9 Inter, sans-serif; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted);
+    }
+    .slate-table td.sharp-cell::before { content: none; }
+    .best .who { min-width: 0; width: 100%; }
+    .best .pct { margin-left: 0; }
+    .stat { flex: 1 1 45%; }
+    .log-form .field, .log-form select, .log-form input { width: 100%; max-width: none; }
+    #view-log td { text-align: right; }
   }
 </style>
 </head>
@@ -188,70 +288,63 @@
       <h1>{{title}}</h1>
       <div class="stamp" id="stamp">Loading…</div>
     </div>
-    <div class="header-actions">
+    <div class="actions">
+      <button id="theme" type="button" title="Switch theme">Light</button>
       <button id="refresh" type="button">Refresh</button>
-      <form class="inline" method="post" action="/logout">
-        <button type="submit">Sign out</button>
-      </form>
+      <form class="inline" method="post" action="/logout"><button type="submit">Sign out</button></form>
     </div>
   </header>
+</div>
 
-  <div class="banner" id="error" hidden></div>
-  <div class="banner info" id="notice" hidden></div>
-
-  <nav class="tabs" id="tabs">
+<nav class="tabs">
+  <div class="wrap" id="tabs">
     <button class="tab active" type="button" data-tab="edges">Edges</button>
     <button class="tab" type="button" data-tab="slate">Slate</button>
-  </nav>
+    <button class="tab" type="button" data-tab="log">Log</button>
+  </div>
+</nav>
 
+<div class="wrap">
   <section class="view" id="view-edges">
-  <div class="controls">
-    <div class="field">
-      <label for="market">Market</label>
-      <select id="market"><option value="">All markets</option></select>
+    <div class="banner" id="error" hidden></div>
+    <div class="banner info" id="notice" hidden></div>
+    <div class="controls">
+      <div class="field">
+        <label for="market">Market</label>
+        <select id="market"><option value="">All markets</option></select>
+      </div>
+      <div class="field">
+        <label for="minEdge">Min edge %</label>
+        <input id="minEdge" type="number" step="0.25" min="0" value="1">
+      </div>
+      <div class="field">
+        <label for="sort">Sort by</label>
+        <select id="sort">
+          <option value="edge">Edge</option>
+          <option value="ev">EV per $100</option>
+          <option value="stake">Stake</option>
+          <option value="kickoff">Kickoff</option>
+        </select>
+      </div>
+      <div class="count" id="count"></div>
     </div>
-    <div class="field">
-      <label for="minEdge">Min edge %</label>
-      <input id="minEdge" type="number" step="0.25" min="0" value="1">
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Game</th><th>Kickoff (ET)</th><th>Market</th><th>Pick</th>
+          <th class="num">DK</th><th class="num">Sharp</th><th class="num">Line</th>
+          <th class="num">Fair %</th><th class="num">DK %</th><th class="num">Edge</th>
+          <th class="num">EV/$100</th><th class="num">Stake</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden></div>
     </div>
-    <div class="field">
-      <label for="sort">Sort by</label>
-      <select id="sort">
-        <option value="edge">Edge</option>
-        <option value="ev">EV per $100</option>
-        <option value="stake">Stake</option>
-        <option value="kickoff">Kickoff</option>
-      </select>
-    </div>
-    <div class="count" id="count"></div>
-  </div>
-
-  <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>Game</th>
-          <th>Kickoff (ET)</th>
-          <th>Market</th>
-          <th>Pick</th>
-          <th class="num">DK</th>
-          <th class="num">Sharp</th>
-          <th class="num" title="How much better (+) or worse (−) DK's number is than the sharp book's">Line</th>
-          <th class="num">Fair %</th>
-          <th class="num">DK %</th>
-          <th class="num">Edge</th>
-          <th class="num">EV/$100</th>
-          <th class="num">Stake</th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="empty" id="empty" hidden></div>
-  </div>
-
+    <footer id="footer"></footer>
   </section>
 
   <section class="view" id="view-slate" hidden>
+    <div class="best" id="best"></div>
     <div class="controls">
       <div class="field">
         <label for="search">Search</label>
@@ -259,17 +352,73 @@
       </div>
       <div class="count" id="slateCount"></div>
     </div>
-    <div class="slate-scroll" id="slate"></div>
+    <div id="slate"></div>
     <div class="empty" id="slateEmpty" hidden></div>
     <p class="legend">
-      DraftKings cells are <span class="swatch better">green</span> when DK's number
-      (or, on the same number, its price) beats the sharp book's for that side and
-      <span class="swatch worse">red</span> when it is worse. The second line of each
-      cell is the price; a positive edge is shown beneath it.
+      DraftKings cells read <span class="key good">green</span> when the edge against the
+      sharp book is 0.5% or better, <span class="key bad">red</span> at −0.5% or worse, and
+      stay grey in between. The edge weighs the number and the price together, so a better
+      number bought with worse juice is not green. Rows marked
+      <span class="key tag">est.</span> were priced with the published half-point estimate.
     </p>
   </section>
 
-  <footer id="footer"></footer>
+  <section class="view" id="view-log" hidden>
+    <div class="stats" id="logStats"></div>
+    <div class="controls">
+      <form class="log-form" id="logForm">
+        <div class="field">
+          <label for="logPerson">Who</label>
+          <input id="logPerson" type="text" placeholder="Initials" required maxlength="40">
+        </div>
+        <div class="field">
+          <label for="logGame">Game</label>
+          <select id="logGame" required></select>
+        </div>
+        <div class="field">
+          <label for="logPick">Pick</label>
+          <select id="logPick" required></select>
+        </div>
+        <div class="field">
+          <label for="logPrice">DK price</label>
+          <input id="logPrice" type="number" step="1" required>
+        </div>
+        <div class="field">
+          <label for="logStake">Stake</label>
+          <input id="logStake" type="number" step="1" min="1" value="25" required>
+        </div>
+        <div class="field">
+          <label for="logDate">Date</label>
+          <input id="logDate" type="date">
+        </div>
+        <button class="primary" type="submit" id="logSubmit">Log bet</button>
+      </form>
+    </div>
+    <div class="banner" id="logError" hidden></div>
+    <h2 class="day">Everyone</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Person</th><th class="num">Bets</th><th class="num">W–L–P</th>
+          <th class="num">Staked</th><th class="num">Profit</th><th class="num">ROI</th>
+          <th class="num">Avg CLV</th>
+        </tr></thead>
+        <tbody id="logPeople"></tbody>
+      </table>
+    </div>
+    <h2 class="day">Bets</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Placed</th><th>Who</th><th>Game</th><th>Pick</th>
+          <th class="num">Price</th><th class="num">Stake</th><th class="num">Close</th>
+          <th class="num">CLV</th><th class="num">Profit</th><th>Result</th>
+        </tr></thead>
+        <tbody id="logBets"></tbody>
+      </table>
+      <div class="empty" id="logEmpty" hidden>No bets logged yet.</div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -277,27 +426,21 @@
   "use strict";
 
   var state = null;
+  var logState = null;
   var POLL_MS = 60000;
-
+  var el = function (id) { return document.getElementById(id); };
   var els = {
-    stamp: document.getElementById("stamp"),
-    error: document.getElementById("error"),
-    notice: document.getElementById("notice"),
-    market: document.getElementById("market"),
-    minEdge: document.getElementById("minEdge"),
-    sort: document.getElementById("sort"),
-    count: document.getElementById("count"),
-    rows: document.getElementById("rows"),
-    empty: document.getElementById("empty"),
-    footer: document.getElementById("footer"),
-    refresh: document.getElementById("refresh"),
-    tabs: document.getElementById("tabs"),
-    viewEdges: document.getElementById("view-edges"),
-    viewSlate: document.getElementById("view-slate"),
-    search: document.getElementById("search"),
-    slate: document.getElementById("slate"),
-    slateCount: document.getElementById("slateCount"),
-    slateEmpty: document.getElementById("slateEmpty")
+    stamp: el("stamp"), error: el("error"), notice: el("notice"),
+    market: el("market"), minEdge: el("minEdge"), sort: el("sort"),
+    count: el("count"), rows: el("rows"), empty: el("empty"), footer: el("footer"),
+    refresh: el("refresh"), theme: el("theme"), tabs: el("tabs"),
+    search: el("search"), slate: el("slate"), slateCount: el("slateCount"),
+    slateEmpty: el("slateEmpty"), best: el("best"),
+    logStats: el("logStats"), logPeople: el("logPeople"), logBets: el("logBets"),
+    logEmpty: el("logEmpty"), logForm: el("logForm"), logError: el("logError"),
+    logPerson: el("logPerson"), logGame: el("logGame"), logPick: el("logPick"),
+    logPrice: el("logPrice"), logStake: el("logStake"), logDate: el("logDate"),
+    logSubmit: el("logSubmit")
   };
 
   function store(key, value) {
@@ -307,179 +450,26 @@
     try { return window.localStorage.getItem(key); } catch (e) { return null; }
   }
 
-  function fmtPct(value) {
-    return value === null || value === undefined ? "–" : value.toFixed(1) + "%";
+  /* ---- formatting ---- */
+  function fmtPct(v) { return v === null || v === undefined ? "–" : v.toFixed(1) + "%"; }
+  function fmtEdge(v) { return v === null || v === undefined ? "–" : v.toFixed(2) + "%"; }
+  function fmtSigned(v) {
+    if (v === null || v === undefined) return "–";
+    return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
   }
-  function fmtEdge(value) {
-    return value === null || value === undefined ? "–" : value.toFixed(2) + "%";
-  }
-  function fmtMoney(value, sign) {
-    if (value === null || value === undefined) return "–";
-    var text = Math.abs(value).toFixed(2);
-    if (sign) return (value >= 0 ? "+" : "−") + text;
-    return "$" + text;
+  function fmtMoney(v) {
+    if (v === null || v === undefined) return "–";
+    return (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2);
   }
   function relative(iso) {
     if (!iso) return "";
-    var seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-    if (seconds < 90) return "just now";
-    var minutes = Math.round(seconds / 60);
-    if (minutes < 60) return minutes + " min ago";
-    var hours = Math.round(minutes / 60);
-    return hours === 1 ? "an hour ago" : hours + " hours ago";
+    var s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 90) return "just now";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60);
+    return h === 1 ? "an hour ago" : h + " hours ago";
   }
-
-  function setTab(name) {
-    var tabs = els.tabs.querySelectorAll(".tab");
-    for (var i = 0; i < tabs.length; i++) {
-      tabs[i].classList.toggle("active", tabs[i].dataset.tab === name);
-    }
-    els.viewEdges.hidden = name !== "edges";
-    els.viewSlate.hidden = name !== "slate";
-    store("cfb-edge.tab", name);
-    if (name === "slate") renderSlate();
-  }
-
-  function oddsCell(cell, isDk) {
-    var td = document.createElement("td");
-    td.className = "num odds";
-    var number = cell && (isDk ? cell.number : cell.sharp_number);
-    var price = cell && (isDk ? cell.price : cell.sharp_price);
-    if (!cell || (!number && !price)) {
-      td.classList.add("empty");
-      td.textContent = "\u2013";
-      return td;
-    }
-    if (isDk && (cell.verdict === "better" || cell.verdict === "worse")) {
-      td.classList.add(cell.verdict);
-      td.title = cell.verdict === "better"
-        ? "DraftKings is the better side of this market"
-        : "DraftKings is the worse side of this market";
-    }
-    td.appendChild(document.createTextNode(number || price));
-    if (number) {
-      var priceLine = document.createElement("span");
-      priceLine.className = "price";
-      priceLine.textContent = price;
-      td.appendChild(priceLine);
-    }
-    if (isDk && cell.estimated) {
-      var mark = document.createElement("span");
-      mark.className = "est-mark";
-      mark.textContent = "est.";
-      mark.title = "priced from the published half-point estimate";
-      td.appendChild(mark);
-    }
-    if (isDk && cell.edge_pct !== null && cell.edge_pct > 0) {
-      var edge = document.createElement("span");
-      edge.className = "edge";
-      edge.textContent = "+" + cell.edge_pct.toFixed(2) + "%";
-      td.appendChild(edge);
-    }
-    if (!isDk && cell.sharp_source) {
-      var source = document.createElement("span");
-      source.className = "price";
-      source.textContent = cell.sharp_source;
-      td.appendChild(source);
-    }
-    return td;
-  }
-
-  function slateHead() {
-    var thead = document.createElement("thead");
-    var top = document.createElement("tr");
-    var game = document.createElement("th");
-    game.textContent = "Game";
-    top.appendChild(game);
-    ["Spread", "Total", "Moneyline"].forEach(function (name) {
-      var th = document.createElement("th");
-      th.textContent = name;
-      th.colSpan = 2;
-      th.className = "num";
-      top.appendChild(th);
-    });
-    var bottom = document.createElement("tr");
-    // Sticky positioning does not survive a rowspan, so the corner is its own cell.
-    bottom.appendChild(document.createElement("th"));
-    ["DK", "Sharp", "DK", "Sharp", "DK", "Sharp"].forEach(function (name) {
-      var th = document.createElement("th");
-      th.textContent = name;
-      th.className = "num";
-      bottom.appendChild(th);
-    });
-    thead.appendChild(top);
-    thead.appendChild(bottom);
-    return thead;
-  }
-
-  function gameBody(game) {
-    var tbody = document.createElement("tbody");
-    game.sides.forEach(function (side, index) {
-      var tr = document.createElement("tr");
-      var team = document.createElement("td");
-      team.className = "team";
-      if (index === 0) {
-        var time = document.createElement("span");
-        time.className = "time";
-        time.textContent = game.kickoff_time_et;
-        team.appendChild(time);
-      }
-      team.appendChild(document.createTextNode(side.label));
-      tr.appendChild(team);
-      ["spread", "total", "h2h"].forEach(function (market) {
-        tr.appendChild(oddsCell(side[market], true));
-        tr.appendChild(oddsCell(side[market], false));
-      });
-      tbody.appendChild(tr);
-    });
-    return tbody;
-  }
-
-  function renderSlate() {
-    if (!state) return;
-    var query = (els.search.value || "").trim().toLowerCase();
-    var days = (state.slate || []).map(function (day) {
-      return {
-        label: day.label,
-        games: query
-          ? day.games.filter(function (g) { return g.search.indexOf(query) >= 0; })
-          : day.games
-      };
-    }).filter(function (day) { return day.games.length; });
-
-    els.slate.innerHTML = "";
-    var shown = 0;
-    days.forEach(function (day) {
-      var heading = document.createElement("h2");
-      heading.className = "day";
-      heading.textContent = day.label;
-      els.slate.appendChild(heading);
-
-      var wrapper = document.createElement("div");
-      wrapper.className = "table-scroll";
-      var table = document.createElement("table");
-      table.className = "slate-table";
-      table.appendChild(slateHead());
-      day.games.forEach(function (game) {
-        table.appendChild(gameBody(game));
-        shown += 1;
-      });
-      wrapper.appendChild(table);
-      els.slate.appendChild(wrapper);
-    });
-
-    var total = (state.slate || []).reduce(function (n, d) { return n + d.games.length; }, 0);
-    els.slateCount.textContent = shown === total
-      ? total + " game" + (total === 1 ? "" : "s")
-      : shown + " of " + total + " games";
-    els.slateEmpty.hidden = shown > 0;
-    if (!shown) {
-      els.slateEmpty.textContent = total
-        ? "No game matches \u201c" + query + "\u201d."
-        : (state.meta.ready ? "No games on the board." : "Waiting for the first scan\u2026");
-    }
-  }
-
   function cell(row, text, className, label) {
     var td = document.createElement("td");
     td.textContent = text;
@@ -489,52 +479,55 @@
     return td;
   }
 
+  /* ---- theme ---- */
+  function setTheme(name) {
+    document.documentElement.setAttribute("data-theme", name);
+    els.theme.textContent = name === "dark" ? "Light" : "Dark";
+    store("cfb-edge.theme", name);
+  }
+  els.theme.addEventListener("click", function () {
+    setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  /* ---- tabs ---- */
+  function setTab(name) {
+    var tabs = els.tabs.querySelectorAll(".tab");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle("active", tabs[i].dataset.tab === name);
+    }
+    el("view-edges").hidden = name !== "edges";
+    el("view-slate").hidden = name !== "slate";
+    el("view-log").hidden = name !== "log";
+    store("cfb-edge.tab", name);
+    if (name === "slate") renderSlate();
+    if (name === "log") { fillGameOptions(); loadLog(); }
+  }
+  els.tabs.addEventListener("click", function (e) {
+    var tab = e.target.closest(".tab");
+    if (tab) setTab(tab.dataset.tab);
+  });
+
+  /* ---- edges ---- */
   function visibleRows() {
     if (!state) return [];
     var market = els.market.value;
-    var minEdge = parseFloat(els.minEdge.value);
-    if (isNaN(minEdge)) minEdge = 0;
-    var rows = state.rows.filter(function (row) {
-      if (market && row.market !== market) return false;
-      return (row.edge_pct === null ? -99 : row.edge_pct) >= minEdge;
+    var min = parseFloat(els.minEdge.value);
+    if (isNaN(min)) min = 0;
+    var rows = state.rows.filter(function (r) {
+      if (market && r.market !== market) return false;
+      return (r.edge_pct === null ? -99 : r.edge_pct) >= min;
     });
     var key = els.sort.value;
     rows.sort(function (a, b) {
       if (key === "kickoff") return (a.kickoff_utc || "").localeCompare(b.kickoff_utc || "");
-      var field = key === "ev" ? "ev_per_100" : key === "stake" ? "stake" : "edge_pct";
-      return (b[field] || 0) - (a[field] || 0);
+      var f = key === "ev" ? "ev_per_100" : key === "stake" ? "stake" : "edge_pct";
+      return (b[f] || 0) - (a[f] || 0);
     });
     return rows;
   }
 
-  function render() {
-    if (!state) return;
+  function renderEdges() {
     var meta = state.meta;
-
-    if (meta.updated_at_et) {
-      var source = meta.odds_source === "api" ? "live pull" : "cached odds";
-      els.stamp.innerHTML = "";
-      var strong = document.createElement("strong");
-      strong.textContent = "Updated " + meta.updated_at_et + " ET";
-      els.stamp.appendChild(strong);
-      els.stamp.appendChild(document.createTextNode(
-        " (" + relative(meta.updated_at_utc) + ") · " + meta.games + " games · " +
-        source + " from " + (meta.odds_fetched_at_et || "?") + " ET"
-      ));
-    } else {
-      els.stamp.textContent = meta.scanning
-        ? "Running the first scan…"
-        : "No scan has finished yet.";
-    }
-
-    if (meta.error) {
-      els.error.hidden = false;
-      els.error.textContent = "Last refresh failed: " + meta.error +
-        (meta.updated_at_et ? " — showing the results from " + meta.updated_at_et + " ET." : "");
-    } else {
-      els.error.hidden = true;
-    }
-
     var wanted = els.market.value;
     var options = '<option value="">All markets</option>' + meta.markets.map(function (m) {
       return '<option value="' + m.key + '">' + m.label + "</option>";
@@ -556,37 +549,27 @@
       var pick = cell(tr, row.pick, "pick", "Pick");
       if (row.translated) {
         var pill = document.createElement("span");
-        pill.className = "pill" + (row.estimated ? " est" : "");
+        pill.className = "pill";
         pill.textContent = row.estimated ? "est." : "½pt";
         pill.title = row.note || "priced through the half-point table";
         pick.appendChild(pill);
       }
       cell(tr, row.dk_price, "num", "DK");
-      var sharpCell = cell(tr, "", "num sharp", "Sharp");
-      var price = row.sharp_price;
-      if (row.translated && row.sharp_point !== null) price += " @" + row.sharp_point;
-      sharpCell.textContent = price;
+      var sharp = cell(tr, "", "num", "Sharp");
+      sharp.textContent = row.sharp_price +
+        (row.translated && row.sharp_point !== null ? " @" + row.sharp_point : "");
       var src = document.createElement("span");
-      src.className = "src";
-      src.textContent = row.sharp_source;
-      sharpCell.appendChild(src);
+      src.className = "sub";
+      src.textContent = " " + row.sharp_source;
+      sharp.appendChild(src);
       var diff = row.line_diff;
-      var diffCell = cell(
-        tr,
-        diff === null || diff === undefined || diff === 0 ? "–" : (diff > 0 ? "+" : "") + diff,
-        "num" + (diff > 0 ? " better" : diff < 0 ? " worse" : ""),
-        "Line diff"
-      );
-      if (diff) {
-        diffCell.title = diff > 0
-          ? "DK's number is " + Math.abs(diff) + " points better than the sharp book's"
-          : "DK's number is " + Math.abs(diff) + " points worse than the sharp book's";
-      }
+      cell(tr, diff ? (diff > 0 ? "+" : "−") + Math.abs(diff) : "–",
+           "num " + (diff > 0 ? "good" : diff < 0 ? "bad" : ""), "Line");
       cell(tr, fmtPct(row.fair_pct), "num", "Fair %");
       cell(tr, fmtPct(row.dk_pct), "num", "DK %");
-      cell(tr, fmtEdge(row.edge_pct), "num edge", "Edge");
-      cell(tr, fmtMoney(row.ev_per_100, true), "num", "EV/$100");
-      cell(tr, fmtMoney(row.stake, false), "num", "Stake");
+      cell(tr, fmtEdge(row.edge_pct), "num edge good", "Edge");
+      cell(tr, fmtSigned(row.ev_per_100), "num", "EV/$100");
+      cell(tr, row.stake === null ? "–" : fmtMoney(row.stake), "num", "Stake");
       els.rows.appendChild(tr);
     });
 
@@ -594,40 +577,432 @@
     els.count.textContent = rows.length === total
       ? total + " bet" + (total === 1 ? "" : "s")
       : rows.length + " of " + total + " bets";
-
+    els.empty.hidden = rows.length > 0;
     if (!rows.length) {
-      els.empty.hidden = false;
-      els.empty.textContent = total
-        ? "No bets match these filters."
+      els.empty.textContent = total ? "No bets match these filters."
         : (meta.ready ? "No +EV lines on the board right now." : "Waiting for the first scan…");
-    } else {
-      els.empty.hidden = true;
     }
 
-    renderSlate();
-
-    var bits = [];
-    bits.push("Rescans every " + meta.refresh_minutes + " min");
+    var bits = ["Rescans every " + meta.refresh_minutes + " min"];
     bits.push("bankroll $" + Math.round(meta.bankroll).toLocaleString() +
               " at " + meta.kelly_fraction + "× Kelly");
     if (meta.priced_from_estimate) {
-      bits.push(meta.priced_from_estimate +
-                " line(s) on a different number priced from the published estimate (est.)");
+      bits.push(meta.priced_from_estimate + " line(s) priced from the published estimate");
     }
     if (meta.flagged_different_number) {
-      bits.push(meta.flagged_different_number +
-                " line(s) on a number the sharp book does not have, not priced");
+      bits.push(meta.flagged_different_number + " line(s) left unpriced");
     }
     if (meta.quota_remaining) bits.push("API quota left: " + meta.quota_remaining);
     els.footer.textContent = bits.join(" · ") + ".";
   }
 
+  /* ---- best bets ---- */
+  function renderBest() {
+    els.best.innerHTML = "";
+    var heading = document.createElement("h2");
+    heading.textContent = "Best bets";
+    els.best.appendChild(heading);
+
+    var top = (state.rows || []).filter(function (r) {
+      return r.edge_pct !== null && r.edge_pct >= 1;
+    }).slice(0, 5);
+
+    if (!top.length) {
+      var none = document.createElement("div");
+      none.className = "none";
+      none.textContent = "No edges above 1% right now.";
+      els.best.appendChild(none);
+      return;
+    }
+    var list = document.createElement("ol");
+    top.forEach(function (row) {
+      var li = document.createElement("li");
+      var link = document.createElement("a");
+      link.href = "#game-" + row.event_id;
+      var who = document.createElement("span");
+      who.className = "who";
+      who.textContent = row.matchup;
+      var what = document.createElement("span");
+      what.className = "what";
+      what.textContent = row.pick;
+      var price = document.createElement("span");
+      price.className = "price";
+      price.textContent = row.dk_price;
+      var pct = document.createElement("span");
+      pct.className = "pct";
+      pct.textContent = "+" + row.edge_pct.toFixed(2) + "%";
+      link.appendChild(who); link.appendChild(what);
+      link.appendChild(price); link.appendChild(pct);
+      li.appendChild(link);
+      list.appendChild(li);
+    });
+    els.best.appendChild(list);
+  }
+
+  /* ---- slate ---- */
+  function oddsCell(cellData, isDk, label) {
+    var td = document.createElement("td");
+    td.className = "odds" + (isDk ? "" : " sharp-cell");
+    if (label) td.setAttribute("data-label", label);
+    var number = cellData && (isDk ? cellData.number : cellData.sharp_number);
+    var price = cellData && (isDk ? cellData.price : cellData.sharp_price);
+    if (!cellData || (!number && !price)) {
+      td.classList.add("none");
+      td.textContent = "no line";
+      return td;
+    }
+    if (isDk && (cellData.verdict === "better" || cellData.verdict === "worse")) {
+      td.classList.add(cellData.verdict);
+    }
+    td.appendChild(document.createTextNode(number || price));
+    if (number) {
+      var priceLine = document.createElement("span");
+      priceLine.className = "price";
+      priceLine.textContent = price;
+      td.appendChild(priceLine);
+    }
+    if (isDk && cellData.show_edge) {
+      var edge = document.createElement("span");
+      edge.className = "cell-edge";
+      edge.textContent = "+" + cellData.edge_pct.toFixed(2) + "%";
+      td.appendChild(edge);
+    }
+    if (!isDk && cellData.sharp_source) {
+      var source = document.createElement("span");
+      source.className = "price";
+      source.textContent = cellData.sharp_source;
+      td.appendChild(source);
+    }
+    return td;
+  }
+
+  function slateHead() {
+    var thead = document.createElement("thead");
+    var top = document.createElement("tr");
+    var game = document.createElement("th");
+    game.textContent = "Game";
+    top.appendChild(game);
+    ["Spread", "Total", "Moneyline"].forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      th.colSpan = 2;
+      th.className = "num";
+      top.appendChild(th);
+    });
+    var est = document.createElement("th");
+    est.className = "num";
+    est.textContent = "";
+    top.appendChild(est);
+    var bottom = document.createElement("tr");
+    bottom.appendChild(document.createElement("th"));
+    ["DK", "Sharp", "DK", "Sharp", "DK", "Sharp", ""].forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      th.className = "num";
+      bottom.appendChild(th);
+    });
+    thead.appendChild(top);
+    thead.appendChild(bottom);
+    return thead;
+  }
+
+  function gameBody(game) {
+    var tbody = document.createElement("tbody");
+    tbody.id = "game-" + game.event_id;
+    game.sides.forEach(function (side, index) {
+      var tr = document.createElement("tr");
+      var team = document.createElement("td");
+      team.className = "team";
+      if (index === 0) {
+        var time = document.createElement("span");
+        time.className = "time";
+        time.textContent = game.kickoff_time_et;
+        team.appendChild(time);
+      }
+      var name = document.createElement("span");
+      name.className = "team-name";
+      name.textContent = side.label;
+      team.appendChild(name);
+      tr.appendChild(team);
+      [["spread", "Spread"], ["total", "Total"], ["h2h", "ML"]].forEach(function (pair) {
+        tr.appendChild(oddsCell(side[pair[0]], true, pair[1]));
+        tr.appendChild(oddsCell(side[pair[0]], false));
+      });
+      var tag = document.createElement("td");
+      tag.className = "num tag";
+      tag.textContent = side.estimated ? "est." : "";
+      if (side.estimated) tag.title = "priced with the published half-point estimate";
+      tr.appendChild(tag);
+      tbody.appendChild(tr);
+    });
+    return tbody;
+  }
+
+  function renderSlate() {
+    if (!state) return;
+    renderBest();
+    var query = (els.search.value || "").trim().toLowerCase();
+    var days = (state.slate || []).map(function (day) {
+      return {
+        label: day.label,
+        games: query ? day.games.filter(function (g) { return g.search.indexOf(query) >= 0; })
+                     : day.games
+      };
+    }).filter(function (day) { return day.games.length; });
+
+    els.slate.innerHTML = "";
+    var shown = 0;
+    days.forEach(function (day) {
+      var heading = document.createElement("h2");
+      heading.className = "day";
+      heading.textContent = day.label;
+      els.slate.appendChild(heading);
+      var wrapper = document.createElement("div");
+      wrapper.className = "table-scroll";
+      var table = document.createElement("table");
+      table.className = "slate-table";
+      table.appendChild(slateHead());
+      day.games.forEach(function (game) { table.appendChild(gameBody(game)); shown += 1; });
+      wrapper.appendChild(table);
+      els.slate.appendChild(wrapper);
+    });
+
+    var total = (state.slate || []).reduce(function (n, d) { return n + d.games.length; }, 0);
+    els.slateCount.textContent = shown === total
+      ? total + " game" + (total === 1 ? "" : "s")
+      : shown + " of " + total + " games";
+    els.slateEmpty.hidden = shown > 0;
+    if (!shown) {
+      els.slateEmpty.textContent = total ? "No game matches “" + query + "”."
+        : (state.meta.ready ? "No games on the board." : "Waiting for the first scan…");
+    }
+  }
+
+  /* ---- log ---- */
+  function fillGameOptions() {
+    if (!state) return;
+    var games = [];
+    (state.slate || []).forEach(function (day) {
+      day.games.forEach(function (g) { games.push(g); });
+    });
+    var signature = games.map(function (g) { return g.event_id; }).join(",");
+    if (signature === els.logGame.dataset.signature) return;
+    els.logGame.dataset.signature = signature;
+    els.logGame.innerHTML = "";
+    games.forEach(function (game) {
+      var option = document.createElement("option");
+      option.value = game.event_id;
+      option.textContent = game.kickoff_time_et + " · " + game.matchup;
+      els.logGame.appendChild(option);
+    });
+    fillPickOptions();
+  }
+
+  function fillPickOptions() {
+    var eventId = els.logGame.value;
+    var game = null;
+    (state.slate || []).forEach(function (day) {
+      day.games.forEach(function (g) { if (g.event_id === eventId) game = g; });
+    });
+    els.logPick.innerHTML = "";
+    if (!game) return;
+    game.sides.forEach(function (side) {
+      [["spread", "spreads", side.label], ["total", "totals", side.total_label],
+       ["h2h", "h2h", side.label]].forEach(function (entry) {
+        var data = side[entry[0]];
+        if (!data || (!data.number && !data.price)) return;
+        var option = document.createElement("option");
+        option.value = JSON.stringify({
+          market: entry[1], side: entry[2],
+          point: data.number ? parseFloat(String(data.number).replace(/[^0-9.\-]/g, "")) : null,
+          price: data.price
+        });
+        option.textContent = (data.number ? data.number + " " : "") + data.price +
+          "  —  " + (entry[1] === "totals" ? side.total_label : side.label);
+        els.logPick.appendChild(option);
+      });
+    });
+    syncPrice();
+  }
+
+  function syncPrice() {
+    if (!els.logPick.value) return;
+    try {
+      var pick = JSON.parse(els.logPick.value);
+      els.logPrice.value = parseInt(String(pick.price).replace("+", ""), 10);
+    } catch (e) { /* leave whatever is there */ }
+  }
+
+  function statTile(label, value, className) {
+    var box = document.createElement("div");
+    box.className = "stat";
+    var head = document.createElement("div");
+    head.className = "stat-label";
+    head.textContent = label;
+    var body = document.createElement("div");
+    body.className = "stat-value " + (className || "");
+    body.textContent = value;
+    box.appendChild(head); box.appendChild(body);
+    return box;
+  }
+
+  function renderLog() {
+    if (!logState) return;
+    var overall = logState.overall;
+    els.logStats.innerHTML = "";
+    els.logStats.appendChild(statTile(
+      "Record", overall.won + "–" + overall.lost + "–" + overall.push));
+    els.logStats.appendChild(statTile(
+      "Profit", fmtMoney(overall.profit),
+      overall.profit > 0 ? "good" : overall.profit < 0 ? "bad" : ""));
+    els.logStats.appendChild(statTile(
+      "ROI", overall.roi_pct === null ? "–" : overall.roi_pct.toFixed(1) + "%",
+      overall.roi_pct > 0 ? "good" : overall.roi_pct < 0 ? "bad" : ""));
+    els.logStats.appendChild(statTile(
+      "Avg CLV", overall.avg_clv_pct === null ? "–" : fmtSigned(overall.avg_clv_pct) + "%",
+      overall.avg_clv_pct > 0 ? "good" : overall.avg_clv_pct < 0 ? "bad" : ""));
+    els.logStats.appendChild(statTile("Open", String(overall.open)));
+
+    els.logPeople.innerHTML = "";
+    logState.people.forEach(function (person) {
+      var tr = document.createElement("tr");
+      cell(tr, person.person, "", "Person");
+      cell(tr, String(person.bets), "num", "Bets");
+      cell(tr, person.won + "–" + person.lost + "–" + person.push, "num", "W–L–P");
+      cell(tr, fmtMoney(person.staked), "num", "Staked");
+      cell(tr, fmtMoney(person.profit), "num " +
+        (person.profit > 0 ? "good" : person.profit < 0 ? "bad" : ""), "Profit");
+      cell(tr, person.roi_pct === null ? "–" : person.roi_pct.toFixed(1) + "%", "num", "ROI");
+      cell(tr, person.avg_clv_pct === null ? "–" : fmtSigned(person.avg_clv_pct) + "%",
+           "num " + (person.avg_clv_pct > 0 ? "good" : person.avg_clv_pct < 0 ? "bad" : ""),
+           "Avg CLV");
+      els.logPeople.appendChild(tr);
+    });
+
+    els.logBets.innerHTML = "";
+    logState.bets.forEach(function (bet) {
+      var tr = document.createElement("tr");
+      cell(tr, bet.placed_on, "", "Placed");
+      cell(tr, bet.person, "", "Who");
+      cell(tr, bet.matchup, "game", "Game");
+      cell(tr, bet.pick, "pick", "Pick");
+      cell(tr, bet.price, "num", "Price");
+      cell(tr, fmtMoney(bet.stake), "num", "Stake");
+      cell(tr, bet.closing_price || "–", "num", "Close");
+      cell(tr, bet.clv_pct === null ? "–" : fmtSigned(bet.clv_pct) + "%",
+           "num " + (bet.clv_pct > 0 ? "good" : bet.clv_pct < 0 ? "bad" : ""), "CLV");
+      cell(tr, bet.profit === null ? "–" : fmtMoney(bet.profit),
+           "num " + (bet.profit > 0 ? "good" : bet.profit < 0 ? "bad" : ""), "Profit");
+      var actions = document.createElement("td");
+      actions.setAttribute("data-label", "Result");
+      var group = document.createElement("div");
+      group.className = "result-btns";
+      [["won", "W"], ["lost", "L"], ["push", "P"], ["open", "—"]].forEach(function (pair) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.textContent = pair[1];
+        button.title = pair[0];
+        if (bet.result === pair[0]) button.className = "on";
+        button.addEventListener("click", function () { settle(bet.bet_id, pair[0]); });
+        group.appendChild(button);
+      });
+      actions.appendChild(group);
+      tr.appendChild(actions);
+      els.logBets.appendChild(tr);
+    });
+    els.logEmpty.hidden = logState.bets.length > 0;
+  }
+
+  function loadLog() {
+    load("/api/log").then(function (data) {
+      if (!data) return;
+      logState = data;
+      renderLog();
+    }).catch(function (err) { showLogError(err.message); });
+  }
+
+  function showLogError(message) {
+    els.logError.hidden = !message;
+    els.logError.textContent = message || "";
+  }
+
+  function settle(betId, result) {
+    load("/api/log/settle", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bet_id: betId, result: result })
+    }).then(function (data) {
+      if (!data) return;
+      logState = data;
+      showLogError("");
+      renderLog();
+    }).catch(function (err) { showLogError(err.message); });
+  }
+
+  els.logGame.addEventListener("change", fillPickOptions);
+  els.logPick.addEventListener("change", syncPrice);
+  els.logForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var pick;
+    try { pick = JSON.parse(els.logPick.value); } catch (e) { return showLogError("pick a side"); }
+    els.logSubmit.disabled = true;
+    store("cfb-edge.person", els.logPerson.value);
+    load("/api/log", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person: els.logPerson.value,
+        event_id: els.logGame.value,
+        market: pick.market, side: pick.side, point: pick.point,
+        price: parseFloat(els.logPrice.value),
+        stake: parseFloat(els.logStake.value),
+        placed_on: els.logDate.value || null
+      })
+    }).then(function (data) {
+      if (!data) return;
+      logState = data;
+      showLogError("");
+      renderLog();
+    }).catch(function (err) {
+      showLogError(err.message);
+    }).finally(function () { els.logSubmit.disabled = false; });
+  });
+
+  /* ---- transport ---- */
   function load(url, options) {
     return fetch(url, options || {}).then(function (response) {
       if (response.status === 401) { window.location.href = "/login"; return null; }
-      if (!response.ok) throw new Error("HTTP " + response.status);
+      if (!response.ok) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.detail || "HTTP " + response.status);
+        });
+      }
       return response.json();
     });
+  }
+
+  function render() {
+    if (!state) return;
+    var meta = state.meta;
+    if (meta.updated_at_et) {
+      els.stamp.innerHTML = "";
+      var strong = document.createElement("strong");
+      strong.textContent = "Updated " + meta.updated_at_et + " ET";
+      els.stamp.appendChild(strong);
+      els.stamp.appendChild(document.createTextNode(
+        " (" + relative(meta.updated_at_utc) + ") · " + meta.games + " games · " +
+        (meta.odds_source === "api" ? "live pull" : "cached odds") + " from " +
+        (meta.odds_fetched_at_et || "?") + " ET"));
+    } else {
+      els.stamp.textContent = meta.scanning ? "Running the first scan…"
+                                            : "No scan has finished yet.";
+    }
+    els.error.hidden = !meta.error;
+    if (meta.error) {
+      els.error.textContent = "Last refresh failed: " + meta.error +
+        (meta.updated_at_et ? " — showing the results from " + meta.updated_at_et + " ET." : "");
+    }
+    renderEdges();
+    renderSlate();
+    fillGameOptions();
   }
 
   function poll() {
@@ -662,23 +1037,21 @@
     });
   });
 
-  els.tabs.addEventListener("click", function (event) {
-    var tab = event.target.closest(".tab");
-    if (tab) setTab(tab.dataset.tab);
-  });
-  els.search.addEventListener("input", renderSlate);
-
   ["market", "minEdge", "sort"].forEach(function (name) {
     var saved = recall("cfb-edge." + name);
     if (saved !== null) els[name].value = saved;
     els[name].addEventListener("change", function () {
       store("cfb-edge." + name, els[name].value);
-      render();
+      renderEdges();
     });
   });
-  els.minEdge.addEventListener("input", render);
+  els.minEdge.addEventListener("input", renderEdges);
+  els.search.addEventListener("input", renderSlate);
 
-  setTab(recall("cfb-edge.tab") === "slate" ? "slate" : "edges");
+  setTheme(recall("cfb-edge.theme") === "light" ? "light" : "dark");
+  els.logPerson.value = recall("cfb-edge.person") || "";
+  els.logDate.value = new Date().toISOString().slice(0, 10);
+  setTab(["slate", "log"].indexOf(recall("cfb-edge.tab")) >= 0 ? recall("cfb-edge.tab") : "edges");
   poll();
   window.setInterval(poll, POLL_MS);
 })();

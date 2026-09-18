@@ -56,10 +56,13 @@ class Config:
     # Used when no table has been built. "estimated" prices off a published
     # half-point chart; "none" leaves those lines flagged as before.
     halfpoint_fallback: str = "estimated"
-    estimate_spread_half_point: float = 0.5  # points of win probability
+    # Points of win probability per half point. These match what a normal
+    # approximation and a distribution built from real games both give; a table
+    # built from your own results replaces them per line.
+    estimate_spread_half_point: float = 1.5
     estimate_spread_key_numbers: tuple[float, ...] = (3.0, 7.0)
-    estimate_key_multiplier: float = 2.0
-    estimate_total_half_point: float = 0.4
+    estimate_key_multiplier: float = 2.33  # ~3.5 points on the key numbers
+    estimate_total_half_point: float = 2.0
     estimate_total_range: tuple[float, float] = (45.0, 60.0)
     line_providers: tuple[str, ...] = ("Bovada", "DraftKings", "ESPN Bet", "consensus")
     # props and alternate lines (one API request per game, so opt-in)

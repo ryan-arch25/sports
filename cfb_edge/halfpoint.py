@@ -258,10 +258,10 @@ class EstimatedTable:
     Values are fractions of win probability per half point.
     """
 
-    spread_half_point: float = 0.005
+    spread_half_point: float = 0.015
     spread_key_numbers: tuple[float, ...] = (3.0, 7.0)
-    key_multiplier: float = 2.0
-    total_half_point: float = 0.004
+    key_multiplier: float = 2.33
+    total_half_point: float = 0.020
     total_range: tuple[float, float] = (45.0, 60.0)
 
     max_move: float = 3.0

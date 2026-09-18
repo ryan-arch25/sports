@@ -256,7 +256,7 @@ class TestStateApi:
         payload = loaded.get("/api/state").json()
         rows = payload["rows"]
         # Every non-negative edge on the sample board, best first.
-        assert len(rows) == 4
+        assert len(rows) == 5
         edges = [row["edge_pct"] for row in rows]
         assert edges == sorted(edges, reverse=True)
 
@@ -678,5 +678,131 @@ class TestEstimatedLabelling:
 
     def test_the_page_renders_the_label(self, signed_in):
         body = signed_in.get("/").text
-        assert 'row.estimated ? "est."' in body
-        assert "est-mark" in body
+        # Edges keeps the pill; the Slate carries one tag per row instead.
+        assert 'row.estimated ? "est." : "\u00bdpt"' in body
+        assert 'side.estimated ? "est." : ""' in body
+
+
+class TestLogApi:
+    def bet(self, **kwargs):
+        payload = {
+            "person": "RS", "event_id": "g2michigan", "market": "spreads",
+            "side": "Michigan Wolverines", "point": 6.5, "price": 110, "stake": 25,
+        }
+        payload.update(kwargs)
+        return payload
+
+    def test_the_log_needs_the_password(self, client):
+        assert client.get("/api/log").status_code == 401
+        assert client.post("/api/log", json=self.bet()).status_code == 401
+        assert client.post("/api/log/settle", json={"bet_id": 1, "result": "won"}).status_code == 401
+
+    def test_an_empty_log(self, signed_in):
+        payload = signed_in.get("/api/log").json()
+        assert payload["bets"] == []
+        assert payload["overall"]["bets"] == 0
+
+    def test_adding_returns_the_whole_log(self, loaded):
+        payload = loaded.post("/api/log", json=self.bet()).json()
+        assert len(payload["bets"]) == 1
+        assert payload["bets"][0]["pick"] == "Michigan Wolverines +6.5"
+        assert payload["overall"]["open"] == 1
+
+    def test_settling_updates_the_record(self, loaded):
+        bet_id = loaded.post("/api/log", json=self.bet()).json()["bets"][0]["bet_id"]
+        payload = loaded.post(
+            "/api/log/settle", json={"bet_id": bet_id, "result": "won"}
+        ).json()
+        assert payload["overall"]["won"] == 1
+        assert payload["overall"]["profit"] == pytest.approx(27.5)
+        assert payload["bets"][0]["result"] == "won"
+
+    def test_closing_line_value_comes_from_the_scan_history(self, web_cfg, tmp_path):
+        """The log reads the sharp book's last pre-kickoff price out of the runs."""
+        import asyncio
+
+        from cfb_edge.scan import ScanOptions
+
+        dash = Dashboard(
+            web_cfg,
+            options=ScanOptions(
+                markets=("h2h", "spreads", "totals"), min_edge=0.0,
+                cache_file=FIXTURE, write_files=False, write_db=True,
+            ),
+            display_min_edge=1.0,
+        )
+        app = create_app(
+            cfg=web_cfg, auth=Auth(password=PASSWORD, secret_key="t"),
+            dashboard=dash, start_scheduler=False,
+        )
+        with TestClient(app) as client:
+            client.post("/login", data={"password": PASSWORD})
+            asyncio.get_event_loop_policy().new_event_loop().run_until_complete(dash.refresh())
+            bet = client.post("/api/log", json=self.bet(price=150)).json()["bets"][0]
+        assert bet["closing_price"] == "-110"
+        assert bet["closing_source"] == "circa"
+        assert bet["clv_pct"] > 0
+
+    def test_two_people_are_tracked_apart(self, loaded):
+        loaded.post("/api/log", json=self.bet(person="RS"))
+        payload = loaded.post("/api/log", json=self.bet(person="JT", stake=50)).json()
+        assert sorted(p["person"] for p in payload["people"]) == ["JT", "RS"]
+
+    @pytest.mark.parametrize("bad", [
+        {"person": ""}, {"stake": 0}, {"price": 0}, {"event_id": ""},
+    ])
+    def test_a_bad_bet_is_a_400_with_a_reason(self, loaded, bad):
+        response = loaded.post("/api/log", json=self.bet(**bad))
+        assert response.status_code == 400
+        assert response.json()["detail"]
+
+    def test_a_body_that_is_not_json(self, loaded):
+        assert loaded.post("/api/log", content=b"nonsense").status_code == 400
+
+    def test_a_body_that_is_not_an_object(self, loaded):
+        assert loaded.post("/api/log", json=[1, 2, 3]).status_code == 400
+
+    def test_settling_something_that_does_not_exist(self, loaded):
+        response = loaded.post("/api/log/settle", json={"bet_id": 999, "result": "won"})
+        assert response.status_code == 400
+
+    def test_settle_needs_both_fields(self, loaded):
+        assert loaded.post("/api/log/settle", json={"bet_id": 1}).status_code == 400
+
+
+class TestPageShell:
+    def test_three_tabs(self, signed_in):
+        body = signed_in.get("/").text
+        for tab in ("edges", "slate", "log"):
+            assert 'data-tab="' + tab + '"' in body
+
+    def test_the_tab_bar_is_sticky(self, signed_in):
+        body = signed_in.get("/").text
+        assert "nav.tabs {" in body
+        assert "position: sticky; top: 0;" in body.split("nav.tabs {")[1][:200]
+
+    def test_a_theme_toggle_that_defaults_to_dark(self, signed_in):
+        body = signed_in.get("/").text
+        assert '<html lang="en" data-theme="dark">' in body
+        assert 'id="theme"' in body
+        assert ':root[data-theme="light"]' in body
+
+    def test_the_fonts_are_asked_for(self, signed_in):
+        body = signed_in.get("/").text
+        assert "fonts.googleapis.com" in body
+        assert "Barlow+Condensed" in body and "IBM+Plex+Mono" in body
+
+    def test_no_gradients_shadows_or_animations(self, signed_in):
+        """The brief asked for none of these."""
+        body = signed_in.get("/").text
+        style = body.split("<style>")[1].split("</style>")[0]
+        for banned in ("gradient", "box-shadow", "@keyframes", "animation:", "transition:"):
+            assert banned not in style, banned
+
+    def test_the_slate_says_no_line_rather_than_a_dash(self, signed_in):
+        assert '"no line"' in signed_in.get("/").text
+
+    def test_the_best_bets_strip_is_there(self, signed_in):
+        body = signed_in.get("/").text
+        assert "No edges above 1% right now." in body
+        assert "renderBest" in body

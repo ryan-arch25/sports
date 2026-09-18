@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from cfb_edge.edges import evaluate_games
+import pytest
+
 from cfb_edge.models import Outcome, parse_commence_time
 from cfb_edge.web.slate import (
     BETTER,
-    SAME,
+    NEUTRAL,
     WORSE,
     build_slate,
     compare_side,
@@ -30,57 +32,59 @@ def side_of(game_payload, label):
 
 
 class TestCompareSide:
-    def test_a_better_number_is_better(self, cfg, halfpoint_table):
+    """The verdict is the edge, so number and juice are weighed together."""
+
+    def market(self, cfg, dk, sharp, market="totals", table=None):
         from cfb_edge.edges import evaluate_market
 
-        game = make_game({
-            "draftkings": {"totals": [Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)]},
-            "pinnacle": {"totals": [Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)]},
-        })
-        rows = {r.side: r for r in evaluate_market(game, "totals", cfg, halfpoint_table)}
+        game = make_game({"draftkings": {market: dk}, "pinnacle": {market: sharp}})
+        return {r.side: r for r in evaluate_market(game, market, cfg, table)}
+
+    def test_a_better_price_on_the_same_number_is_better(self, cfg):
+        rows = self.market(
+            cfg,
+            dk=[Outcome("Over", 105, 44.5), Outcome("Under", -125, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
         assert compare_side(rows["Over"]) == BETTER
         assert compare_side(rows["Under"]) == WORSE
 
-    def test_on_the_same_number_the_price_decides(self, cfg):
-        from cfb_edge.edges import evaluate_market
+    def test_a_better_number_bought_with_bad_juice_is_not_better(self, cfg, halfpoint_table):
+        """The whole reason for weighing them together."""
+        rows = self.market(
+            cfg,
+            dk=[Outcome("Over", -200, 51.5), Outcome("Under", 160, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+            table=halfpoint_table,
+        )
+        over = rows["Over"]
+        assert over.line_diff > 0          # DK's number is the better one
+        assert compare_side(over) == WORSE  # and the price more than swallows it
 
-        game = make_game({
-            "draftkings": {"spreads": [
-                Outcome("Home Team", -125, -3.5), Outcome("Away Team", 105, 3.5),
-            ]},
-            "pinnacle": {"spreads": [
-                Outcome("Home Team", -105, -3.5), Outcome("Away Team", -105, 3.5),
-            ]},
-        })
-        rows = {r.side: r for r in evaluate_market(game, "spreads", cfg)}
-        assert compare_side(rows["Away Team"]) == BETTER   # +105 beats -105
-        assert compare_side(rows["Home Team"]) == WORSE    # -125 is worse than -105
+    def test_a_near_coin_flip_stays_neutral(self, cfg):
+        rows = self.market(
+            cfg,
+            dk=[Outcome("Over", -102, 44.5), Outcome("Under", -102, 44.5)],
+            sharp=[Outcome("Over", -102, 44.5), Outcome("Under", -102, 44.5)],
+        )
+        assert {compare_side(r) for r in rows.values()} == {NEUTRAL}
 
-    def test_identical_prices_are_the_same(self, cfg):
-        from cfb_edge.edges import evaluate_market
+    @pytest.mark.parametrize(
+        "edge,expected",
+        [(2.0, BETTER), (0.5, BETTER), (0.49, NEUTRAL), (0.0, NEUTRAL),
+         (-0.49, NEUTRAL), (-0.5, WORSE), (-3.0, WORSE)],
+    )
+    def test_the_bands(self, edge, expected, cfg):
+        rows = self.market(
+            cfg,
+            dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        row = rows["Over"]
+        row.edge = edge / 100.0
+        assert compare_side(row) == expected
 
-        game = make_game({
-            "draftkings": {"h2h": [Outcome("Home Team", -140), Outcome("Away Team", 120)]},
-            "pinnacle": {"h2h": [Outcome("Home Team", -140), Outcome("Away Team", 120)]},
-        })
-        assert {compare_side(r) for r in evaluate_market(game, "h2h", cfg)} == {SAME}
-
-    def test_a_rounding_hair_does_not_colour_a_cell(self, cfg):
-        """A consensus price is an average and can miss DK's by a fraction."""
-        from cfb_edge.edges import evaluate_market
-
-        game = make_game({
-            "draftkings": {"h2h": [Outcome("Home Team", -170), Outcome("Away Team", 155)]},
-            "fanduel": {"h2h": [Outcome("Home Team", -170), Outcome("Away Team", 155)]},
-            "betmgm": {"h2h": [Outcome("Home Team", -175), Outcome("Away Team", 150)]},
-            "williamhill_us": {"h2h": [Outcome("Home Team", -165), Outcome("Away Team", 160)]},
-        })
-        rows = {r.side: r for r in evaluate_market(game, "h2h", cfg)}
-        assert rows["Away Team"].sharp_price != 155  # the average is not exactly DK's
-        assert round(rows["Away Team"].sharp_price) == 155
-        assert compare_side(rows["Away Team"]) == SAME  # but both read +155 on screen
-
-    def test_no_sharp_price_means_no_verdict(self, cfg):
+    def test_no_sharp_line_means_no_verdict(self, cfg):
         from cfb_edge.edges import evaluate_market
 
         game = make_game({
@@ -91,6 +95,15 @@ class TestCompareSide:
 
     def test_a_missing_row_has_no_verdict(self):
         assert compare_side(None) is None
+
+    def test_the_cell_only_offers_its_number_when_it_is_worth_reading(self, cfg):
+        rows = self.market(
+            cfg,
+            dk=[Outcome("Over", 105, 44.5), Outcome("Under", -125, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        assert serialize_cell("totals", rows["Over"])["show_edge"] is True
+        assert serialize_cell("totals", rows["Under"])["show_edge"] is False
 
 
 class TestCells:
@@ -219,3 +232,30 @@ class TestSlateShape:
     def test_a_late_kickoff_lands_on_the_eastern_day_not_the_utc_one(self):
         # 01:00 UTC Sunday is still Saturday evening in the east.
         assert day_label(parse_commence_time("2026-09-20T01:00:00Z")) == "Saturday, September 19"
+
+
+class TestEstimatedTagPerRow:
+    def test_a_row_is_tagged_when_any_of_its_markets_was_estimated(self, cfg):
+        from cfb_edge.halfpoint import estimated_table
+
+        game = make_game({
+            "draftkings": {
+                "totals": [Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+                "spreads": [Outcome("Home Team", -110, -3.5), Outcome("Away Team", -110, 3.5)],
+            },
+            "pinnacle": {
+                "totals": [Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+                "spreads": [Outcome("Home Team", -110, -3.5), Outcome("Away Team", -110, 3.5)],
+            },
+        })
+        rows = evaluate_games([game], cfg, ("spreads", "totals"), estimated_table(cfg))
+        payload = build_slate([game], rows)[0]["games"][0]
+        assert all(side["estimated"] is True for side in payload["sides"])
+        # The spread was on the same number, so only the total was estimated.
+        assert payload["sides"][0]["spread"]["estimated"] is False
+        assert payload["sides"][0]["total"]["estimated"] is True
+
+    def test_a_row_with_nothing_estimated_is_not_tagged(self, sample_games, cfg):
+        slate = build_slate(sample_games, rows_for(sample_games, cfg))
+        game = next(g for day in slate for g in day["games"] if g["event_id"] == "g2michigan")
+        assert all(side["estimated"] is False for side in game["sides"])
