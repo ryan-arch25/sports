@@ -9,7 +9,7 @@ sharp number rather than only where it is beatable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
 from cfb_edge.edges import EdgeRow
@@ -21,9 +21,12 @@ BETTER = "better"
 WORSE = "worse"
 NEUTRAL = "neutral"
 
-# Edges inside this band are noise rather than an opinion, so the cell stays
-# grey and keeps its number to itself.
-NEUTRAL_BAND_PCT = 0.5
+# The bands are deliberately uneven. DraftKings sits a few tenths of a point
+# behind Pinnacle on most of the board; that is the juice it charges, not a
+# warning, and painting it red would make the ordinary case look alarming. So
+# green wants a real edge and red waits until the price is properly bad.
+BETTER_BAND_PCT = 0.5
+WORSE_BAND_PCT = -1.0
 
 # A moneyline past this, either way, is left in plain text. A better price on a
 # 14-to-1 shot is real but not actionable, and colouring it green reads as a
@@ -34,6 +37,9 @@ LONGSHOT_PRICE = 400.0
 # sportsbook lists them: away team on top with the Over, home team beneath with
 # the Under.
 TOTAL_SIDES = ("Over", "Under")
+
+# The three markets a display row carries, in the order the table prints them.
+MARKET_KEYS = ("spread", "total", "h2h")
 
 
 def compare_side(row: EdgeRow | None) -> str | None:
@@ -50,9 +56,9 @@ def compare_side(row: EdgeRow | None) -> str | None:
         return None
     if row.market == "h2h" and abs(float(row.dk_price)) > LONGSHOT_PRICE:
         return None
-    if row.edge_pct >= NEUTRAL_BAND_PCT:
+    if row.edge_pct >= BETTER_BAND_PCT:
         return BETTER
-    if row.edge_pct <= -NEUTRAL_BAND_PCT:
+    if row.edge_pct <= WORSE_BAND_PCT:
         return WORSE
     return NEUTRAL
 
@@ -95,7 +101,7 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
         "show_edge": (
             verdict is not None
             and row.edge_pct is not None
-            and row.edge_pct >= NEUTRAL_BAND_PCT
+            and row.edge_pct >= BETTER_BAND_PCT
         ),
         "has_sharp": row.sharp_price is not None,
     }
@@ -122,6 +128,52 @@ def day_label(moment: datetime) -> str:
 
 def day_key(moment: datetime) -> str:
     return moment.astimezone(ET).strftime("%Y-%m-%d")
+
+
+def day_phrase(moment: datetime, now: datetime | None = None) -> str:
+    """How the summary line refers to this day: "today", or "on Saturday".
+
+    A slate usually spans several days, so the same sentence sits above more
+    than one table. Calling Saturday "today" on a Thursday would be wrong in the
+    one place the group is meant to glance and trust.
+    """
+    today = (now or datetime.now(timezone.utc)).astimezone(ET).date()
+    day: date = moment.astimezone(ET).date()
+    if day == today:
+        return "today"
+    if day == today + timedelta(days=1):
+        return "tomorrow"
+    if day == today - timedelta(days=1):
+        return "yesterday"
+    return f"on {day:%A}"
+
+
+def tally_day(games: Sequence[dict[str, Any]]) -> tuple[int, int]:
+    """How many of the day's comparable lines DraftKings wins.
+
+    Only cells with a verdict count, so a side with no sharp price and a
+    suppressed long shot are both out of the denominator: neither is a line the
+    board has an opinion about.
+    """
+    better = comparable = 0
+    for game in games:
+        for side in game["sides"]:
+            for market in MARKET_KEYS:
+                cell = side[market]
+                if cell is None or cell["verdict"] is None:
+                    continue
+                comparable += 1
+                if cell["verdict"] == BETTER:
+                    better += 1
+    return better, comparable
+
+
+def day_summary(better: int, comparable: int, phrase: str) -> str:
+    """The one line above a day's table, so the shape of the day reads first."""
+    if not comparable:
+        return f"No comparable lines {phrase}."
+    lines = "line" if comparable == 1 else "lines"
+    return f"DK is the better price on {better} of {comparable} {lines} {phrase}."
 
 
 def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
@@ -162,14 +214,30 @@ def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
     }
 
 
-def build_slate(games: Sequence[Game], rows: Sequence[EdgeRow]) -> list[dict[str, Any]]:
+def build_slate(
+    games: Sequence[Game], rows: Sequence[EdgeRow], now: datetime | None = None
+) -> list[dict[str, Any]]:
     """Every game grouped by kickoff day in Eastern time, earliest first."""
     index = RowIndex.build(rows)
     days: dict[str, dict[str, Any]] = {}
     for game in sorted(games, key=lambda g: (g.commence_time, g.matchup)):
         key = day_key(game.commence_time)
         day = days.setdefault(
-            key, {"key": key, "label": day_label(game.commence_time), "games": []}
+            key,
+            {
+                "key": key,
+                "label": day_label(game.commence_time),
+                "phrase": day_phrase(game.commence_time, now),
+                "games": [],
+            },
         )
         day["games"].append(serialize_game(game, index))
-    return [days[key] for key in sorted(days)]
+    ordered = [days[key] for key in sorted(days)]
+    for day in ordered:
+        better, comparable = tally_day(day["games"])
+        day["better"] = better
+        day["comparable"] = comparable
+        # The page recounts this for a filtered view, from the same verdicts;
+        # this is the sentence for the whole day, and for anyone reading the API.
+        day["summary"] = day_summary(better, comparable, day["phrase"])
+    return ordered

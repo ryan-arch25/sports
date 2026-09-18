@@ -184,8 +184,12 @@
   .best .none { padding: 16px 18px; color: var(--muted); font-size: 14px; }
 
   /* Slate ---------------------------------------------------------------- */
-  .day { margin: 30px 0 10px; font-size: 17px; font-weight: 600; }
+  .day { margin: 30px 0 4px; font-size: 17px; font-weight: 600; }
   .day:first-of-type { margin-top: 4px; }
+  .day-summary { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+  .day-summary .count-good { color: var(--ink-2); font-weight: 600;
+                             font-family: "IBM Plex Mono", monospace;
+                             font-variant-numeric: tabular-nums; }
   /* Two header rows cannot share one sticky offset, and a slate has a table
      per day, so its head stays put with the table. */
   .slate-table th { position: static; }
@@ -358,9 +362,10 @@
       Green is a price comparison, not a prediction: it means DraftKings is paying at
       least 0.5% better than Pinnacle on that side.
       DraftKings cells read <span class="key good">green</span> when the edge against the
-      sharp book is 0.5% or better, <span class="key bad">red</span> at −0.5% or worse, and
-      stay grey in between. The edge weighs the number and the price together, so a better
-      number bought with worse juice is not green. Rows marked
+      sharp book is 0.5% or better and <span class="key bad">red</span> only at −1% or worse.
+      Everything in between stays plain: DK is usually a few tenths behind Pinnacle, and that
+      is ordinary juice rather than a warning. The edge weighs the number and the price
+      together, so a better number bought with worse juice is not green. Rows marked
       <span class="key tag">est.</span> were priced with the published half-point estimate.
       Moneylines longer than +400 or shorter than −400 are left plain: a better price on a
       long shot is real but not actionable.
@@ -432,6 +437,8 @@
   var state = null;
   var logState = null;
   var POLL_MS = 60000;
+  /* The three markets a slate row carries, in the order the table prints them. */
+  var MARKETS = ["spread", "total", "h2h"];
   var el = function (id) { return document.getElementById(id); };
   var els = {
     stamp: el("stamp"), error: el("error"), notice: el("notice"),
@@ -742,6 +749,43 @@
     return tbody;
   }
 
+  /* Counted from the games on screen rather than taken from the payload, so
+     the line still describes the day once a search has filtered it. */
+  function tallyDay(games) {
+    var better = 0, comparable = 0;
+    games.forEach(function (game) {
+      game.sides.forEach(function (side) {
+        MARKETS.forEach(function (market) {
+          var cell = side[market];
+          if (!cell || !cell.verdict) return;
+          comparable += 1;
+          if (cell.verdict === "better") better += 1;
+        });
+      });
+    });
+    return { better: better, comparable: comparable };
+  }
+
+  function daySummary(day) {
+    var p = document.createElement("p");
+    p.className = "day-summary";
+    var tally = tallyDay(day.games);
+    var phrase = day.phrase || "today";
+    if (!tally.comparable) {
+      p.textContent = "No comparable lines " + phrase + ".";
+      return p;
+    }
+    var count = document.createElement("span");
+    count.className = "count-good";
+    count.textContent = tally.better + " of " + tally.comparable;
+    p.appendChild(document.createTextNode("DK is the better price on "));
+    p.appendChild(count);
+    p.appendChild(document.createTextNode(
+      " " + (tally.comparable === 1 ? "line" : "lines") + " " + phrase + "."
+    ));
+    return p;
+  }
+
   function renderSlate() {
     if (!state) return;
     renderBest();
@@ -749,6 +793,7 @@
     var days = (state.slate || []).map(function (day) {
       return {
         label: day.label,
+        phrase: day.phrase,
         games: query ? day.games.filter(function (g) { return g.search.indexOf(query) >= 0; })
                      : day.games
       };
@@ -761,6 +806,7 @@
       heading.className = "day";
       heading.textContent = day.label;
       els.slate.appendChild(heading);
+      els.slate.appendChild(daySummary(day));
       var wrapper = document.createElement("div");
       wrapper.className = "table-scroll";
       var table = document.createElement("table");

@@ -13,7 +13,10 @@ from cfb_edge.web.slate import (
     build_slate,
     compare_side,
     day_label,
+    day_phrase,
+    day_summary,
     serialize_cell,
+    tally_day,
 )
 
 from conftest import make_game
@@ -72,9 +75,10 @@ class TestCompareSide:
     @pytest.mark.parametrize(
         "edge,expected",
         [(2.0, BETTER), (0.5, BETTER), (0.49, NEUTRAL), (0.0, NEUTRAL),
-         (-0.49, NEUTRAL), (-0.5, WORSE), (-3.0, WORSE)],
+         (-0.5, NEUTRAL), (-0.99, NEUTRAL), (-1.0, WORSE), (-3.0, WORSE)],
     )
     def test_the_bands(self, edge, expected, cfg):
+        """Uneven on purpose: the ordinary half-point of juice is not a warning."""
         rows = self.market(
             cfg,
             dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
@@ -232,6 +236,103 @@ class TestSlateShape:
     def test_a_late_kickoff_lands_on_the_eastern_day_not_the_utc_one(self):
         # 01:00 UTC Sunday is still Saturday evening in the east.
         assert day_label(parse_commence_time("2026-09-20T01:00:00Z")) == "Saturday, September 19"
+
+
+class TestDaySummary:
+    """One line above each day's table: how the board leans before you read it."""
+
+    def a_day(self, cfg, dk, sharp, now=None):
+        game = make_game({
+            "draftkings": {"totals": dk},
+            "pinnacle": {"totals": sharp},
+        })
+        return build_slate([game], rows_for([game], cfg, ("totals",)), now)[0]
+
+    def test_it_counts_the_sides_draftkings_wins(self, cfg):
+        day = self.a_day(
+            cfg,
+            dk=[Outcome("Over", 105, 44.5), Outcome("Under", -125, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        assert (day["better"], day["comparable"]) == (1, 2)
+        assert day["summary"].startswith("DK is the better price on 1 of 2 lines ")
+
+    def test_a_side_with_no_sharp_price_is_out_of_the_denominator(self, cfg):
+        """Nothing to compare is not the same as DraftKings losing."""
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Home Team", -175), Outcome("Away Team", 145)]},
+            "fanduel": {"h2h": [Outcome("Home Team", -170), Outcome("Away Team", 140)]},
+        })
+        day = build_slate([game], rows_for([game], cfg, ("h2h",)))[0]
+        assert (day["better"], day["comparable"]) == (0, 0)
+        assert day["summary"].startswith("No comparable lines ")
+
+    def test_a_suppressed_long_shot_is_out_of_the_denominator(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Home Team", -5000), Outcome("Away Team", 1600)]},
+            "pinnacle": {"h2h": [Outcome("Home Team", -4000), Outcome("Away Team", 1400)]},
+        })
+        day = build_slate([game], rows_for([game], cfg, ("h2h",)))[0]
+        assert day["comparable"] == 0
+
+    def test_the_neutral_middle_counts_against_draftkings_in_the_ratio(self, cfg):
+        """A plain cell is still a line DK did not win, so it stays in M."""
+        day = self.a_day(
+            cfg,
+            dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        assert (day["better"], day["comparable"]) == (0, 2)
+
+    def test_it_says_today_for_today(self, cfg):
+        now = parse_commence_time("2026-09-20T14:00:00Z")  # kickoff morning
+        day = self.a_day(
+            cfg,
+            dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            now=now,
+        )
+        assert day["summary"].endswith("lines today.")
+
+    def test_it_names_the_weekday_for_a_day_that_is_not_today(self, cfg):
+        """Calling Sunday "today" on a Thursday would be wrong where it matters."""
+        now = parse_commence_time("2026-09-17T14:00:00Z")  # Thursday, kickoff Sunday
+        day = self.a_day(
+            cfg,
+            dk=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+            now=now,
+        )
+        assert day["summary"].endswith("lines on Sunday.")
+
+    @pytest.mark.parametrize(
+        "kickoff,expected",
+        [
+            ("2026-09-19T16:00:00Z", "today"),
+            ("2026-09-20T16:00:00Z", "tomorrow"),
+            ("2026-09-18T16:00:00Z", "yesterday"),
+            ("2026-09-22T16:00:00Z", "on Tuesday"),
+        ],
+    )
+    def test_day_phrase(self, kickoff, expected):
+        now = parse_commence_time("2026-09-19T14:00:00Z")
+        assert day_phrase(parse_commence_time(kickoff), now) == expected
+
+    def test_one_line_is_singular(self):
+        assert day_summary(1, 1, "today") == "DK is the better price on 1 of 1 line today."
+
+    def test_tally_ignores_markets_nobody_posted(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Home Team", -175), Outcome("Away Team", 145)]},
+            "pinnacle": {"h2h": [Outcome("Home Team", -145), Outcome("Away Team", 130)]},
+        })
+        day = build_slate([game], rows_for([game], cfg, ("h2h",)))[0]
+        # Two moneyline sides, and no spread or total to count.
+        assert tally_day(day["games"])[1] == 2
+
+    def test_each_day_gets_its_own_line(self, sample_games, cfg):
+        slate = build_slate(sample_games, rows_for(sample_games, cfg))
+        assert all(day["summary"] for day in slate)
 
 
 class TestEstimatedTagPerRow:

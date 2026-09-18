@@ -519,15 +519,23 @@ you can see at a glance whether "sharp" here means Pinnacle, Circa or a
 consensus of the soft books.
 
 DraftKings cells are coloured by the **edge**, which weighs the number and the
-juice together: green at +0.5% or better, red at −0.5% or worse, grey in
-between. A better number bought with much worse juice is not green, because it
-is not a better bet. The edge itself is printed in the cell only when it clears
-+0.5%, so the numbers on screen are the ones worth reading.
+juice together. The two bands are deliberately uneven: green at +0.5% or better,
+red only at −1% or worse, plain text in between. Because the edge is measured
+against the *fair* price rather than the sharp book's posted one, DraftKings sits
+a few tenths behind Pinnacle on most of the board — that is the juice it charges,
+not a warning, and a symmetric band painted the ordinary case red. A better
+number bought with much worse juice is still not green, because it is not a
+better bet. The edge itself is printed in the cell only when it clears +0.5%, so
+the numbers on screen are the ones worth reading. `BETTER_BAND_PCT` and
+`WORSE_BAND_PCT` in `cfb_edge/web/slate.py` set where the colour starts.
 
-Because the edge is measured against the *fair* price rather than the sharp
-book's posted one, a DraftKings price that merely matches Pinnacle reads red —
-it is telling you there is no value there, not that DK is out of line. Widen
-`NEUTRAL_BAND_PCT` in `cfb_edge/web/slate.py` if you would rather see more grey.
+Above each day's table sits one line — *DK is the better price on 4 of 16 lines
+on Saturday* — so the shape of the day reads before any cell does. The
+denominator counts only lines with a verdict, so a side the sharp book does not
+post and a suppressed long shot are both out of it: neither is a line the board
+has an opinion about. A day that is not today is named rather than called
+"today", and the count follows the search box, so a filtered view describes
+what is actually on screen.
 
 Moneylines longer than +400 or shorter than −400 are left in plain text, never
 coloured: a better price on a 14-to-1 shot is real, but it is not actionable and
@@ -671,7 +679,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-695 tests, no network access required. The odds conversion and de-vig math are
+709 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
