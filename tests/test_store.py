@@ -7,6 +7,8 @@ import sqlite3
 import pytest
 
 from cfb_edge.store import (
+    ALERT_TABLES,
+    HISTORY_TABLES,
     LOG_TABLES,
     SCAN_TABLES,
     SCHEMA_VERSION,
@@ -143,7 +145,13 @@ class TestScanIsolation:
 
     def test_the_log_tables_are_named_apart_from_the_scan_ones(self):
         assert set(SCAN_TABLES).isdisjoint(LOG_TABLES)
-        assert set(SCAN_TABLES) | set(LOG_TABLES) == set(TABLES)
+
+    def test_every_table_belongs_to_exactly_one_group(self):
+        """A table in no group would never be migrated by anything."""
+        groups = [SCAN_TABLES, LOG_TABLES, HISTORY_TABLES, ALERT_TABLES]
+        named = [table for group in groups for table in group]
+        assert sorted(named) == sorted(set(named))  # no table in two groups
+        assert set(named) == set(TABLES)
 
 
 class TestDeclaration:

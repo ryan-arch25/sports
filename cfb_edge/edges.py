@@ -154,23 +154,30 @@ def _empty_row(
     )
 
 
-def evaluate_market(
+def evaluate_book(
     game: Game,
     market: str,
+    book: str,
     cfg: Config,
     table: "HalfPointTable | None" = None,
+    sharp_by_group: dict[str | None, FairLine] | None = None,
 ) -> list[EdgeRow]:
-    """One row per DraftKings side in this market."""
-    dk_key = resolve_book(game, cfg.target_book, cfg.aliases)
-    dk_market = game.market(dk_key, market) if dk_key else None
-    if dk_market is None:
+    """One row per side this book posts in this market, priced off the sharp line.
+
+    `sharp_by_group` lets a caller price several books against one fair line
+    without paying to de-vig it again for each of them.
+    """
+    book_key = resolve_book(game, book, cfg.aliases)
+    book_market = game.market(book_key, market) if book_key else None
+    if book_market is None:
         return []
 
-    sharp_by_group = fair_lines(game, market, cfg)
+    if sharp_by_group is None:
+        sharp_by_group = fair_lines(game, market, cfg)
     rows: list[EdgeRow] = []
-    for outcome in dk_market.outcomes:
+    for outcome in book_market.outcomes:
         try:
-            dk_prob = american_to_prob(outcome.price)
+            offered_prob = american_to_prob(outcome.price)
         except OddsError:
             continue  # a price no book could post; nothing to compare
         sharp = sharp_by_group.get(outcome.group)
@@ -184,10 +191,21 @@ def evaluate_market(
             continue
         rows.append(
             _row_against(
-                game, market, outcome.key, outcome.point, outcome.price, dk_prob, sharp, cfg, table
+                game, market, outcome.key, outcome.point, outcome.price, offered_prob,
+                sharp, cfg, table,
             )
         )
     return rows
+
+
+def evaluate_market(
+    game: Game,
+    market: str,
+    cfg: Config,
+    table: "HalfPointTable | None" = None,
+) -> list[EdgeRow]:
+    """One row per DraftKings side in this market."""
+    return evaluate_book(game, market, cfg.target_book, cfg, table)
 
 
 def _row_against(
@@ -369,6 +387,7 @@ __all__ = [
     "DIFFERENT_NUMBER",
     "NO_SHARP_LINE",
     "NO_SHARP_SIDE",
+    "evaluate_book",
     "evaluate_games",
     "evaluate_market",
     "different_number_rows",

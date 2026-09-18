@@ -111,6 +111,11 @@ def apply_env_overrides(cfg: Config, env: dict[str, str] | None = None) -> Confi
     # or ships one committed to the repo and points at it here.
     if env.get("HALFPOINT_TABLE"):
         cfg.halfpoint_table_path = Path(env["HALFPOINT_TABLE"])
+    # load_config() already reads this, but a config file that failed to parse
+    # drops us to bare defaults -- and the alerts are the one feature whose
+    # whole switch is an environment variable, so it is read here too.
+    if env.get("DISCORD_WEBHOOK_URL"):
+        cfg.discord_webhook_url = env["DISCORD_WEBHOOK_URL"]
     if cfg.kelly_fraction <= 0:
         log.warning("KELLY_FRACTION must be > 0; using 0.25")
         cfg.kelly_fraction = 0.25
@@ -346,6 +351,23 @@ def create_app(
             return JSONResponse(log_payload(conn))
         except BetLogError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+        finally:
+            conn.close()
+
+    @app.get("/api/history/{event_id}")
+    async def api_history(event_id: str, _: None = Depends(require_auth)) -> JSONResponse:
+        """One game's line movement, fetched only when a row is expanded."""
+        from cfb_edge.movement import history_payload
+
+        conn = log_connection()
+        try:
+            return JSONResponse(history_payload(conn, cfg, event_id))
+        except Exception as exc:  # noqa: BLE001 - a missing history is not a 500
+            log.warning("history for %s failed: %s", event_id, exc)
+            return JSONResponse(
+                {"event_id": event_id, "changes": [], "count": 0,
+                 "error": f"{type(exc).__name__}: {exc}"}
+            )
         finally:
             conn.close()
 

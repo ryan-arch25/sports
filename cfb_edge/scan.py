@@ -67,6 +67,9 @@ class ScanResult:
     event_requests: int = 0
     warnings: list[str] = field(default_factory=list)
     halfpoint_source: str | None = None
+    # The tables this run priced with, kept so anything downstream -- shopping
+    # the other books, say -- translates numbers exactly the way the scan did.
+    halfpoint_tables: list = field(default_factory=list)
 
     @property
     def fetched_at_iso(self) -> str:
@@ -164,6 +167,7 @@ def run_scan(cfg: Config, options: ScanOptions) -> ScanResult:
         event_requests=event_requests,
         warnings=warnings,
         halfpoint_source=halfpoint_source,
+        halfpoint_tables=list(table),
     )
 
 

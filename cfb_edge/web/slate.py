@@ -63,31 +63,33 @@ def compare_side(row: EdgeRow | None) -> str | None:
     return NEUTRAL
 
 
-def _number(market: str, row: EdgeRow | None, prefix: str = "") -> str:
-    if row is None or row.dk_point is None:
+def number_text(market: str, point: float | None, prefix: str = "") -> str:
+    """A line's number as the board prints it: signed for spreads, O/U for totals."""
+    if point is None:
         return ""
     if market == "spreads":
-        return f"{row.dk_point:+g}"
-    return f"{prefix}{row.dk_point:g}".strip()
+        return f"{point:+g}"
+    return f"{prefix}{point:g}".strip()
 
 
-def _sharp_number(market: str, row: EdgeRow | None, prefix: str = "") -> str:
-    if row is None or row.sharp_point is None:
-        return ""
-    if market == "spreads":
-        return f"{row.sharp_point:+g}"
-    return f"{prefix}{row.sharp_point:g}".strip()
-
-
-def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[str, Any] | None:
+def serialize_cell(
+    market: str,
+    row: EdgeRow | None,
+    prefix: str = "",
+    best: Any = None,
+    moved: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """One market for one side: DK's offer, the sharp book's, and the verdict."""
     if row is None:
         return None
+    from cfb_edge.shop import serialize_offer
+
     verdict = compare_side(row)
+    moved = moved or {}
     return {
-        "number": _number(market, row, prefix),
+        "number": number_text(market, row.dk_point, prefix),
         "price": format_american(row.dk_price),
-        "sharp_number": _sharp_number(market, row, prefix),
+        "sharp_number": number_text(market, row.sharp_point, prefix),
         # Empty rather than a dash: the page decides how to say "nothing here".
         "sharp_price": "" if row.sharp_price is None else format_american(row.sharp_price),
         "sharp_source": row.sharp_source or "",
@@ -104,6 +106,12 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
             and row.edge_pct >= BETTER_BAND_PCT
         ),
         "has_sharp": row.sharp_price is not None,
+        # The best of the US books we pull, which is often DraftKings itself.
+        "best": serialize_offer(best, market, prefix),
+        # Present only when the number or the price moved inside the arrow
+        # window, so the page can render an arrow without deciding anything.
+        "dk_moved": moved.get("dk"),
+        "sharp_moved": moved.get("sharp"),
     }
 
 
@@ -176,18 +184,33 @@ def day_summary(better: int, comparable: int, phrase: str) -> str:
     return f"DK is the better price on {better} of {comparable} {lines} {phrase}."
 
 
-def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
+def serialize_game(
+    game: Game,
+    index: RowIndex,
+    best: dict[tuple[str, str, str], Any] | None = None,
+    moved: dict[tuple[str, str, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """A game as two display rows: away with the Over, home with the Under."""
+    best = best or {}
+    moved = moved or {}
+
+    def cell(market: str, side_name: str, prefix: str = "") -> dict[str, Any] | None:
+        return serialize_cell(
+            market,
+            index.get(game.event_id, market, side_name),
+            prefix,
+            best=best.get((game.event_id, market, side_name)),
+            moved=moved.get((game.event_id, market, side_name)),
+        )
+
     sides = []
     for team, total_side in ((game.away_team, "Over"), (game.home_team, "Under")):
         side = {
             "label": team,
             "total_label": total_side,
-            "spread": serialize_cell("spreads", index.get(game.event_id, "spreads", team)),
-            "total": serialize_cell(
-                "totals", index.get(game.event_id, "totals", total_side), f"{total_side[0]} "
-            ),
-            "h2h": serialize_cell("h2h", index.get(game.event_id, "h2h", team)),
+            "spread": cell("spreads", team),
+            "total": cell("totals", total_side, f"{total_side[0]} "),
+            "h2h": cell("h2h", team),
         }
         # One `est.` per row rather than one per cell: it is a property of how
         # the row was priced, not of any single market.
@@ -215,7 +238,11 @@ def serialize_game(game: Game, index: RowIndex) -> dict[str, Any]:
 
 
 def build_slate(
-    games: Sequence[Game], rows: Sequence[EdgeRow], now: datetime | None = None
+    games: Sequence[Game],
+    rows: Sequence[EdgeRow],
+    now: datetime | None = None,
+    best: dict[tuple[str, str, str], Any] | None = None,
+    moved: dict[tuple[str, str, str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Every game grouped by kickoff day in Eastern time, earliest first."""
     index = RowIndex.build(rows)
@@ -231,7 +258,7 @@ def build_slate(
                 "games": [],
             },
         )
-        day["games"].append(serialize_game(game, index))
+        day["games"].append(serialize_game(game, index, best, moved))
     ordered = [days[key] for key in sorted(days)]
     for day in ordered:
         better, comparable = tally_day(day["games"])

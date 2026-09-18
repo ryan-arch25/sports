@@ -22,6 +22,7 @@ DEFAULT_ALIASES: dict[str, list[str]] = {
     "fanduel": ["fanduel"],
     "betmgm": ["betmgm"],
     "caesars": ["williamhill_us", "caesars"],
+    "espnbet": ["espnbet"],
 }
 
 
@@ -42,6 +43,12 @@ class Config:
     target_book: str = "draftkings"
     sharp_priority: tuple[str, ...] = ("pinnacle", "circa")
     consensus_books: tuple[str, ...] = ("fanduel", "betmgm", "caesars")
+    # Books the Slate's "best price" column shops across: the US books a member
+    # of the group could actually place the bet at. Pinnacle and Circa are the
+    # reference, not somewhere most people have an account, so they stay out.
+    shop_books: tuple[str, ...] = (
+        "draftkings", "fanduel", "betmgm", "caesars", "espnbet",
+    )
     min_consensus_books: int = 2
     cache_dir: Path = Path("data/cache")
     out_dir: Path = Path("data/runs")
@@ -83,8 +90,22 @@ class Config:
     web_floor_edge: float = 0.0  # lowest edge sent to the page; it filters upward
     # discord notifications
     discord_webhook_url: str | None = None
-    discord_min_edge: float = 2.0
+    discord_min_edge: float = 2.0  # the CLI's --notify threshold
     discord_username: str = "cfb-edge"
+    # The dashboard's own alerts, which are a different job from the CLI's:
+    # every new edge as it appears, plus one summary each morning.
+    discord_alert_min_edge: float = 1.5
+    discord_summary_min_edge: float = 1.0
+    discord_summary_hour_et: int = 9
+    # How long after the hour the morning summary may still go out. Without it,
+    # a container that starts at 11pm would post a "today" summary for a day
+    # whose games have already kicked off.
+    discord_summary_window_hours: float = 3.0
+    # line history
+    history_markets: tuple[str, ...] = ("spreads", "totals")
+    history_window_hours: float = 48.0
+    history_arrow_hours: float = 6.0
+    history_retention_days: float = 30.0
     aliases: dict[str, list[str]] = field(default_factory=lambda: dict(DEFAULT_ALIASES))
     api_key: str | None = None
     source_path: Path | None = None
@@ -92,7 +113,9 @@ class Config:
     @property
     def all_books(self) -> tuple[str, ...]:
         """Every logical book we want prices for, target first."""
-        ordered = [self.target_book, *self.sharp_priority, *self.consensus_books]
+        ordered = [
+            self.target_book, *self.sharp_priority, *self.consensus_books, *self.shop_books
+        ]
         seen: list[str] = []
         for book in ordered:
             if book not in seen:
@@ -202,6 +225,8 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         cfg.sharp_priority = tuple(str(b) for b in books["sharp_priority"])
     if "consensus" in books:
         cfg.consensus_books = tuple(str(b) for b in books["consensus"])
+    if "shop" in books:
+        cfg.shop_books = tuple(str(b) for b in books["shop"])
     if "min_consensus_books" in books:
         cfg.min_consensus_books = int(books["min_consensus_books"])
     aliases = books.get("aliases") or {}
@@ -283,6 +308,24 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         cfg.discord_min_edge = float(discord["min_edge"])
     if "username" in discord:
         cfg.discord_username = str(discord["username"])
+    if "alert_min_edge" in discord:
+        cfg.discord_alert_min_edge = float(discord["alert_min_edge"])
+    if "summary_min_edge" in discord:
+        cfg.discord_summary_min_edge = float(discord["summary_min_edge"])
+    if "summary_hour_et" in discord:
+        cfg.discord_summary_hour_et = int(discord["summary_hour_et"])
+    if "summary_window_hours" in discord:
+        cfg.discord_summary_window_hours = float(discord["summary_window_hours"])
+
+    history = data.get("history") or {}
+    if "markets" in history:
+        cfg.history_markets = tuple(str(m) for m in history["markets"])
+    if "window_hours" in history:
+        cfg.history_window_hours = float(history["window_hours"])
+    if "arrow_hours" in history:
+        cfg.history_arrow_hours = float(history["arrow_hours"])
+    if "retention_days" in history:
+        cfg.history_retention_days = float(history["retention_days"])
 
     cfg.api_key = os.environ.get("ODDS_API_KEY") or None
     # The webhook URL is a secret, so the environment wins over the config file.

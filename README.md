@@ -412,7 +412,11 @@ Everything lands in `data/cfb_edge.sqlite`:
 - `observations` — one row per evaluated DK line per run, stamped with the
   snapshot's fetch time. This is the line-movement history.
 - `bets` — what you logged with `bets add`.
-- `notifications` — what has been announced to Discord, so nothing repeats.
+- `notifications` — what the CLI has announced to Discord, so nothing repeats.
+- `alerts` — what the *dashboard* has announced, keyed by Eastern date, so a
+  line is mentioned once a day however often it crosses the threshold.
+- `line_history` — one row per line *change*, for the Slate's arrows and
+  movement panel. See below.
 - `closing_lines` (view) — each side's last observation before kickoff.
 - `clv` (view) — every observation joined to that side's closing line, with
   `clv_prob_delta = closing implied probability − implied probability at the
@@ -473,6 +477,45 @@ be pinged for the 2%+ ones. Each line is announced once per price: if DK moves
 from +110 to +125 you get told again, but a rescan that finds the same price does
 not repeat itself. A webhook that is down or misconfigured prints a warning and
 leaves the scan alone, and nothing is recorded as sent unless Discord accepted it.
+
+### Alerts from the dashboard
+
+The deployed dashboard posts to the same webhook on its own, with rules built
+for something that runs unattended rather than something you invoke. Set
+`DISCORD_WEBHOOK_URL` and it starts; leave it unset and the dashboard never
+mentions Discord at all — no warning, no error, no database file.
+
+**New edges.** After each scan, every line at `[discord] alert_min_edge` (1.5%
+by default) that was *not* there on the previous scan gets one line in the
+channel: pick, matchup, DK price against the sharp price, edge, and kickoff in
+ET. One message, one bet per line, no embeds. A busy Saturday is split across
+several messages rather than truncated, because Discord rejects a body over
+2000 characters.
+
+**Once a day, whatever the line does.** Dedupe is per line per Eastern day, and
+deliberately ignores the number and the price: a side that clears 1.5%, drops
+back under and clears again has not told anyone anything new. The record lives
+in the `alerts` table rather than in memory, so a redeploy mid-slate does not
+re-announce the morning's board.
+
+**The morning summary.** On days with games, the first scan at or after 9:00am
+ET posts *"N edges above 1% today"* and the top five. It rides the scan loop
+rather than its own timer, so with the default 30-minute refresh it lands
+between 9:00 and 9:30 — and it will not go out after
+`[discord] summary_window_hours` (3) have passed, so a container that starts in
+the evening does not summarize a slate that has already kicked off. A quiet
+morning still gets a message: *"0 edges above 1% today"* is worth knowing.
+
+| key | default | what it does |
+| --- | --- | --- |
+| `alert_min_edge` | `1.5` | edge that earns an immediate message |
+| `summary_min_edge` | `1.0` | edge counted in the morning summary |
+| `summary_hour_et` | `9` | when the summary window opens |
+| `summary_window_hours` | `3.0` | how long it stays open |
+
+Alerts need the database, because that is where "already said this today"
+lives. A dashboard running with `DASHBOARD_WRITE_DB=false` therefore stays
+quiet rather than re-announcing the same edges every half hour.
 
 ## Web dashboard
 
@@ -545,6 +588,55 @@ A market neither book posts — a moneyline on a 58-point spread, say — reads
 **no line** in light text rather than a dash. Rows priced through the published
 half-point estimate carry one **est.** tag in a column of their own.
 
+#### The Best column
+
+Beside DK and the sharp book, each market carries a **Best** cell: the best
+number-and-price for that side across the US books in the same response —
+DraftKings, FanDuel, BetMGM, Caesars and ESPN Bet — with the winning book named
+underneath. DK stays the featured comparison; Best answers the wider question of
+where to actually place the bet, and often the answer is DraftKings anyway.
+
+"Best" is the same edge the rest of the page is built on, computed for each book
+against the same sharp fair line and translated through the half-point table when
+a book is on a different number. So a better number bought with worse juice does
+not win the column, and ties break by book name so the winner does not flicker
+between scans. Pinnacle and Circa are excluded: they are the yardstick, not
+somewhere most of the group has an account. Change that with `[books] shop`.
+
+This costs no extra API calls. The request already sends a `bookmakers` filter
+listing every book at once — quota is charged per market and region, not per
+book — so ESPN Bet was added to that list and to `[books] shop`, and nothing
+else moved: the sharp priority and the consensus fallback are untouched, so no
+edge on the board changes because of it.
+
+#### Line movement
+
+Click any game to expand a panel of every recorded change in the last 48 hours:
+one row per change, newest first, with the time in ET, the book, the market, the
+side and the line. A row marked *opened* is where that line was first seen, not
+somewhere it moved to.
+
+Next to a current number, a small ▲ or ▼ means it moved in the last six hours;
+hover it for what it was and when. The arrow follows the number — up means the
+number went up, which is good or bad depending on which side you want — and for
+a price-only move it points at the longer price. The tooltip always spells out
+the previous line, so nothing rests on reading the arrow right.
+
+The history lives in `line_history`, and a row is written **only when a number
+or price actually changes**. A line nobody touches all week is one row; the scan
+that finds every number where it left it writes nothing. That is what keeps the
+table small enough to query on a page load. Two details make it hold up:
+
+- The consensus label is stored without its count. `consensus(3)` becoming
+  `consensus(2)` when a book stops posting is not a line move, and keying on the
+  label with the count would have recorded one every time.
+- Pruning (`[history] retention_days`, 30) never deletes a line's most recent
+  row. Deleting it would not just lose history — the next scan would see an
+  unknown line, write it again, and report a move that never happened.
+
+Only spreads and totals are recorded, which is `[history] markets`. Arrows use
+`[history] arrow_hours` (6) and the panel `[history] window_hours` (48).
+
 A **Best bets** strip sits at the top: the five biggest edges across the whole
 board, each linking down to its game. If nothing clears 1% it says so.
 
@@ -603,6 +695,7 @@ configuration:
    | `DASHBOARD_TITLE` | no | Page title |
    | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data`. Set it to your volume's mount path |
    | `HALFPOINT_TABLE` | no | Path to the half-point table, overriding `$DATA_DIR/halfpoint.json` |
+   | `DISCORD_WEBHOOK_URL` | no | Turns on the dashboard's alerts; unset means silence |
    | `APP_USER` | no | User the entrypoint drops to, default `cfbedge` |
 
    `config.toml` is gitignored, so it is not in the image — on Railway these
@@ -679,7 +772,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-709 tests, no network access required. The odds conversion and de-vig math are
+810 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -689,7 +782,10 @@ CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
 (`test_web.py`), the Slate view's comparisons and grouping (`test_slate.py`),
 the shared bet log and its CLV (`test_betlog.py`), the schema migration against
-a database from before the Log tab (`test_store.py`),
+a database from before the Log tab (`test_store.py`), best-price shopping across
+the US books (`test_shop.py`), change-only line history with its arrows and
+panel (`test_movement.py`), the dashboard's Discord alerts and their per-day
+de-duplication (`test_alerts.py`),
 the container entrypoint that prepares a mounted volume (`test_entrypoint.py`),
 and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).

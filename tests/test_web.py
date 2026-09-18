@@ -861,3 +861,112 @@ class TestResilienceAndLegend:
     def test_the_legend_explains_the_longshot_rule(self, signed_in):
         body = signed_in.get("/").text
         assert "Moneylines longer than +400 or shorter than −400 are left plain" in body
+
+
+class TestSlatePayloadExtras:
+    """The Best column and the movement arrows, as the page receives them."""
+
+    def test_every_priced_cell_carries_a_best_offer(self, dashboard):
+        asyncio.run(dashboard.refresh())
+        cells = [
+            cell
+            for day in dashboard.state.slate
+            for game in day["games"]
+            for side in game["sides"]
+            for key in ("spread", "total", "h2h")
+            if (cell := side[key]) is not None and cell["has_sharp"]
+        ]
+        assert cells
+        assert all(cell["best"] for cell in cells)
+
+    def test_a_best_offer_names_its_book(self, dashboard):
+        asyncio.run(dashboard.refresh())
+        best = [
+            side[key]["best"]
+            for day in dashboard.state.slate
+            for game in day["games"]
+            for side in game["sides"]
+            for key in ("spread", "total", "h2h")
+            if side[key] and side[key]["best"]
+        ]
+        assert any(b["book"] != "draftkings" for b in best)
+        assert all(b["book_label"] for b in best)
+
+    def test_no_history_means_no_arrows(self, dashboard):
+        """Writes are off in these tests, so nothing has been recorded."""
+        asyncio.run(dashboard.refresh())
+        arrows = [
+            side[key][field]
+            for day in dashboard.state.slate
+            for game in day["games"]
+            for side in game["sides"]
+            for key in ("spread", "total", "h2h")
+            for field in ("dk_moved", "sharp_moved")
+            if side[key]
+        ]
+        assert arrows and not any(arrows)
+
+
+class TestSideEffectsAreIsolated:
+    """A scan that worked must survive its own bookkeeping failing."""
+
+    def test_a_broken_history_write_leaves_the_board_standing(self, web_cfg, monkeypatch):
+        dash = make_dashboard(web_cfg)
+        dash.options.write_db = True
+        monkeypatch.setattr(
+            "cfb_edge.store.record_lines",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk gone")),
+        )
+        asyncio.run(dash.refresh())
+        assert dash.state.ready and dash.state.rows
+        assert any("line history failed" in w for w in dash.state.warnings)
+
+    def test_a_broken_alert_leaves_the_board_standing(self, web_cfg, monkeypatch):
+        dash = make_dashboard(web_cfg)
+        dash.options.write_db = True
+        monkeypatch.setattr(
+            dash.alerter, "run",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("discord is down")),
+        )
+        asyncio.run(dash.refresh())
+        assert dash.state.ready and dash.state.rows
+        assert any("Discord alerts failed" in w for w in dash.state.warnings)
+
+    def test_history_is_recorded_when_writes_are_on(self, web_cfg):
+        from cfb_edge.store import connect, line_history
+
+        dash = make_dashboard(web_cfg)
+        dash.options.write_db = True
+        asyncio.run(dash.refresh())
+        conn = connect(web_cfg.db_path)
+        try:
+            event_id = dash.state.slate[0]["games"][0]["event_id"]
+            assert line_history(conn, event_id)
+        finally:
+            conn.close()
+
+
+class TestHistoryEndpoint:
+    def test_it_needs_a_password(self, client):
+        assert client.get("/api/history/anything").status_code == 401
+
+    def test_a_game_with_no_history_is_empty(self, signed_in):
+        payload = signed_in.get("/api/history/nothing-here").json()
+        assert payload["changes"] == []
+        assert payload["count"] == 0
+
+    def test_it_returns_recorded_moves(self, signed_in, web_cfg):
+        from datetime import datetime, timezone
+
+        from cfb_edge.store import LineSnapshot, connect, record_lines
+
+        now = datetime.now(timezone.utc)
+        conn = connect(web_cfg.db_path)
+        try:
+            record_lines(conn, [LineSnapshot("g1", "spreads", "Home", "draftkings", -6.5, -110)], now)
+        finally:
+            conn.close()
+        payload = signed_in.get("/api/history/g1").json()
+        assert payload["count"] == 1
+        assert payload["changes"][0]["book_label"] == "DraftKings"
+        assert payload["changes"][0]["number"] == "-6.5"

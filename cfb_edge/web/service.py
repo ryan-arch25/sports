@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
+from cfb_edge.alerts import Alerter
 from cfb_edge.config import Config
 from cfb_edge.edges import TRANSLATED, EdgeRow
 from cfb_edge.models import MARKETS, market_label
@@ -155,6 +156,7 @@ class Dashboard:
             default_min_edge=self.display_min_edge,
             refresh_minutes=self.refresh_minutes,
         )
+        self.alerter = Alerter(cfg)
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
@@ -231,19 +233,75 @@ class Dashboard:
             self.state.error = f"{type(exc).__name__}: {exc}"
             log.warning("scan failed: %s", self.state.error)
             return False
-        self.apply(result)
+        # Everything past this point is a side-effect on a scan that already
+        # succeeded, so each piece fails on its own terms: a Discord outage
+        # must not cost anyone the board.
+        #
+        # Both need the database. Line movement *is* the database, and the
+        # alerter keeps its "already said this today" record there -- without
+        # it every scan would re-announce the same edges, which is worse than
+        # staying quiet. So a dashboard with writes turned off does neither.
+        moved = {}
+        if self.options.write_db:
+            moved = self._aside(
+                result, "line history", lambda: self._track_movement(result)
+            ) or {}
+        self.apply(result, moved=moved)
+        if self.options.write_db:
+            self._aside(result, "Discord alerts", lambda: self._alert(result))
+        self.state.warnings = list(result.warnings)
         return True
 
-    def apply(self, result: ScanResult) -> None:
+    def _aside(self, result: ScanResult, what: str, action):
+        """Run one non-essential step, turning any failure into a warning."""
+        try:
+            return action()
+        except Exception as exc:  # noqa: BLE001 - deliberately broad; see above
+            warning = f"{what} failed ({type(exc).__name__}: {exc})"
+            log.warning(warning)
+            result.warnings.append(warning)
+            return None
+
+    def _track_movement(self, result: ScanResult) -> dict:
+        """Record the lines that moved, then read back what to draw arrows for."""
+        from cfb_edge.movement import moves, serialize_moves, snapshots
+        from cfb_edge.store import connect, prune_history, record_lines
+
+        now = datetime.now(timezone.utc)
+        conn = connect(self.cfg.db_path)
+        try:
+            record_lines(
+                conn, snapshots(result.rows, self.cfg), result.snapshot.fetched_at,
+                result.run_id,
+            )
+            prune_history(conn, now - timedelta(days=self.cfg.history_retention_days))
+            return serialize_moves(moves(conn, result.rows, self.cfg, now), self.cfg)
+        finally:
+            conn.close()
+
+    def _alert(self, result: ScanResult) -> None:
+        outcome = self.alerter.run(result.rows, run_id=result.run_id)
+        if outcome.sent_anything:
+            log.info(
+                "discord: %d message(s), %d new edge(s), summary=%s",
+                len(outcome.messages), len(outcome.announced), outcome.summary_sent,
+            )
+
+    def apply(self, result: ScanResult, moved: dict | None = None) -> None:
         """Replace the served state with a finished scan."""
         now = datetime.now(timezone.utc)
+        from cfb_edge.shop import shop_board
         from cfb_edge.web.slate import build_slate
 
         rows = [serialize_row(row) for row in result.bets]
         self.state.rows = rows
+        slate_markets = [m for m in result.markets if m in MARKETS]
+        best = shop_board(result.games, slate_markets, self.cfg, result.halfpoint_tables)
         # The slate keeps every game and both sides of every market, which the
         # ranked rows deliberately do not.
-        self.state.slate = build_slate(result.games, result.rows)
+        self.state.slate = build_slate(
+            result.games, result.rows, best=best, moved=moved or {}
+        )
         self.state.markets = markets_present(result.markets, result.bets)
         self.state.updated_at_utc = _iso(now)
         self.state.updated_at_et = kickoff_et(now)

@@ -208,6 +208,37 @@
   .odds.better .price, .odds.worse .price { color: inherit; opacity: 0.75; }
   .odds .cell-edge { display: block; font-size: 12px; font-weight: 600; }
   .odds.none { color: var(--muted); font-size: 13px; }
+  .odds .line { display: block; white-space: nowrap; }
+  /* The best of the US books, so its own book name reads like the sharp source. */
+  .best-cell .book { display: block; font-size: 12px; color: var(--muted); }
+  /* Movement: direction only. Which way is good depends on the side you want,
+     so the arrow stays the text colour and the title says what it was. */
+  .arrow { margin-left: 4px; font-size: 9px; vertical-align: 1px; color: var(--muted);
+           cursor: help; }
+  .slate-table tr.side { cursor: pointer; }
+  .slate-table tr.side:hover td { background: var(--panel-2); }
+  .caret { margin-left: 6px; font-size: 10px; color: var(--muted); }
+
+  /* The expandable line-movement panel. */
+  /* The direct child only: a descendant rule would also hit the panel's own
+     table and flatten it. */
+  .slate-table tr.history > td { padding: 0; }
+  .slate-table tr.history:hover > td { background: none; }
+  /* The panel scrolls itself on a narrow screen rather than widening the page. */
+  .panel { padding: 14px 16px 16px; background: var(--panel-2);
+           border-top: 1px solid var(--line); overflow-x: auto; }
+  .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+                 color: var(--muted); margin-bottom: 8px; }
+  .panel-empty { font-size: 13px; color: var(--muted); max-width: 60ch; }
+  .panel-table { width: auto; font-size: 13px; }
+  .panel-table th { position: static; padding: 3px 18px 5px 0; text-align: left;
+                    font-size: 11px; color: var(--muted); }
+  .panel-table td { padding: 3px 18px 3px 0; border: 0; white-space: nowrap;
+                    text-align: left; }
+  .panel-table .opened { margin-left: 8px; font-size: 11px; color: var(--muted);
+                         font-family: Inter, sans-serif; }
+  .panel-table td.num { font-family: "IBM Plex Mono", monospace;
+                        font-variant-numeric: tabular-nums; }
   .legend { margin-top: 14px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
   .legend .key { color: var(--ink-2); }
 
@@ -265,7 +296,7 @@
       border-radius: var(--radius); border-top: 1px solid var(--line);
     }
     .slate-table tr {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px;
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px 12px;
       padding: 12px 16px; border-bottom: 1px solid var(--line-soft);
     }
     .slate-table tbody tr:last-child { border-bottom: 0; }
@@ -276,7 +307,13 @@
       font: 500 11px/1.9 Inter, sans-serif; text-transform: uppercase;
       letter-spacing: 0.06em; color: var(--muted);
     }
-    .slate-table td.sharp-cell::before { content: none; }
+    .slate-table td.sharp-cell::before, .slate-table td.best-cell::before { content: none; }
+    .slate-table tr.history { display: block; padding: 0; }
+    .slate-table tr.history > td { text-align: left; }
+    .panel-table, .panel-table tr, .panel-table td, .panel-table th {
+      display: revert; width: auto;
+    }
+    .panel-table { display: table; }
     .best .who { min-width: 0; width: 100%; }
     .best .pct { margin-left: 0; }
     .stat { flex: 1 1 45%; }
@@ -369,6 +406,11 @@
       <span class="key tag">est.</span> were priced with the published half-point estimate.
       Moneylines longer than +400 or shorter than −400 are left plain: a better price on a
       long shot is real but not actionable.
+      <span class="key">Best</span> is the best number-and-price across the US books in the
+      same response — DraftKings, FanDuel, BetMGM, Caesars and ESPN Bet — scored the same
+      way, so it is a wider question than DK against Pinnacle and often DK wins it anyway.
+      An arrow means that number or price moved in the last 6 hours; hover it for what it
+      was. Click any game to see every recorded move from the last 48 hours.
     </p>
   </section>
 
@@ -651,6 +693,25 @@
   }
 
   /* ---- slate ---- */
+  /* Game > market group > DK | Sharp | Best, plus the est. column. */
+  var SLATE_COLUMNS = 1 + MARKETS.length * 3 + 1;
+  var expanded = {};      /* event_id -> true, so a poll does not collapse a panel */
+  var historyCache = {};  /* event_id -> payload, so re-rendering does not refetch */
+  var lastScanStamp = null;
+
+  function movedArrow(move) {
+    if (!move) return null;
+    var arrow = document.createElement("span");
+    arrow.className = "arrow " + move.direction;
+    arrow.textContent = move.direction === "up" ? "\u25B2" : "\u25BC";
+    var was = move.previous_number || move.previous_price;
+    if (move.previous_number && move.previous_price) {
+      was = move.previous_number + " (" + move.previous_price + ")";
+    }
+    arrow.title = "was " + was + " at " + move.previous_at_et + " ET";
+    return arrow;
+  }
+
   function oddsCell(cellData, isDk, label) {
     var td = document.createElement("td");
     td.className = "odds" + (isDk ? "" : " sharp-cell");
@@ -665,7 +726,12 @@
     if (isDk && (cellData.verdict === "better" || cellData.verdict === "worse")) {
       td.classList.add(cellData.verdict);
     }
-    td.appendChild(document.createTextNode(number || price));
+    var head = document.createElement("span");
+    head.className = "line";
+    head.appendChild(document.createTextNode(number || price));
+    var arrow = movedArrow(isDk ? cellData.dk_moved : cellData.sharp_moved);
+    if (arrow) head.appendChild(arrow);
+    td.appendChild(head);
     if (number) {
       var priceLine = document.createElement("span");
       priceLine.className = "price";
@@ -687,6 +753,32 @@
     return td;
   }
 
+  function bestCell(cellData) {
+    var td = document.createElement("td");
+    td.className = "odds best-cell";
+    var best = cellData && cellData.best;
+    if (!best) {
+      td.classList.add("none");
+      td.textContent = "no line";
+      return td;
+    }
+    var head = document.createElement("span");
+    head.className = "line";
+    head.textContent = best.number || best.price;
+    td.appendChild(head);
+    if (best.number) {
+      var priceLine = document.createElement("span");
+      priceLine.className = "price";
+      priceLine.textContent = best.price;
+      td.appendChild(priceLine);
+    }
+    var book = document.createElement("span");
+    book.className = "book";
+    book.textContent = best.book_label;
+    td.appendChild(book);
+    return td;
+  }
+
   function slateHead() {
     var thead = document.createElement("thead");
     var top = document.createElement("tr");
@@ -696,7 +788,7 @@
     ["Spread", "Total", "Moneyline"].forEach(function (name) {
       var th = document.createElement("th");
       th.textContent = name;
-      th.colSpan = 2;
+      th.colSpan = 3;
       th.className = "num";
       top.appendChild(th);
     });
@@ -706,12 +798,13 @@
     top.appendChild(est);
     var bottom = document.createElement("tr");
     bottom.appendChild(document.createElement("th"));
-    ["DK", "Sharp", "DK", "Sharp", "DK", "Sharp", ""].forEach(function (name) {
-      var th = document.createElement("th");
-      th.textContent = name;
-      th.className = "num";
-      bottom.appendChild(th);
-    });
+    ["DK", "Sharp", "Best", "DK", "Sharp", "Best", "DK", "Sharp", "Best", ""]
+      .forEach(function (name) {
+        var th = document.createElement("th");
+        th.textContent = name;
+        th.className = "num";
+        bottom.appendChild(th);
+      });
     thead.appendChild(top);
     thead.appendChild(bottom);
     return thead;
@@ -720,8 +813,10 @@
   function gameBody(game) {
     var tbody = document.createElement("tbody");
     tbody.id = "game-" + game.event_id;
+    tbody.className = "game";
     game.sides.forEach(function (side, index) {
       var tr = document.createElement("tr");
+      tr.className = "side";
       var team = document.createElement("td");
       team.className = "team";
       if (index === 0) {
@@ -734,19 +829,124 @@
       name.className = "team-name";
       name.textContent = side.label;
       team.appendChild(name);
+      if (index === 0) {
+        var caret = document.createElement("span");
+        caret.className = "caret";
+        caret.textContent = expanded[game.event_id] ? "\u25BE" : "\u25B8";
+        team.appendChild(caret);
+      }
       tr.appendChild(team);
       [["spread", "Spread"], ["total", "Total"], ["h2h", "ML"]].forEach(function (pair) {
         tr.appendChild(oddsCell(side[pair[0]], true, pair[1]));
         tr.appendChild(oddsCell(side[pair[0]], false));
+        tr.appendChild(bestCell(side[pair[0]]));
       });
       var tag = document.createElement("td");
       tag.className = "num tag";
       tag.textContent = side.estimated ? "est." : "";
       if (side.estimated) tag.title = "priced with the published half-point estimate";
       tr.appendChild(tag);
+      tr.addEventListener("click", function () { toggleHistory(game.event_id); });
       tbody.appendChild(tr);
     });
+    if (expanded[game.event_id]) tbody.appendChild(historyRow(game.event_id));
     return tbody;
+  }
+
+  /* ---- line movement ---- */
+  function historyRow(eventId) {
+    var tr = document.createElement("tr");
+    tr.className = "history";
+    var td = document.createElement("td");
+    td.colSpan = SLATE_COLUMNS;
+    td.appendChild(historyPanel(eventId));
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function historyPanel(eventId) {
+    var panel = document.createElement("div");
+    panel.className = "panel";
+    var data = historyCache[eventId];
+    if (!data) {
+      panel.textContent = "Loading line movement\u2026";
+      return panel;
+    }
+    var title = document.createElement("div");
+    title.className = "panel-title";
+    title.textContent = "Line movement, last " + (data.window_hours || 48) + " hours";
+    panel.appendChild(title);
+    if (data.error) {
+      var problem = document.createElement("div");
+      problem.className = "panel-empty";
+      problem.textContent = data.error;
+      panel.appendChild(problem);
+      return panel;
+    }
+    if (!data.changes.length) {
+      var none = document.createElement("div");
+      none.className = "panel-empty";
+      none.textContent = "No recorded moves yet. A row appears here the first time a "
+        + "number or price changes between scans.";
+      panel.appendChild(none);
+      return panel;
+    }
+    var table = document.createElement("table");
+    table.className = "panel-table";
+    var head = document.createElement("tr");
+    ["Time (ET)", "Book", "Market", "Side", "Line"].forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+    data.changes.forEach(function (change) {
+      var tr = document.createElement("tr");
+      [change.at_et, change.book_label, change.market_label, change.side,
+       (change.number ? change.number + "  " : "") + change.price]
+        .forEach(function (text, i) {
+          var td = document.createElement("td");
+          td.textContent = text;
+          if (i === 4) {
+            td.className = "num";
+            if (change.opened) {
+              var note = document.createElement("span");
+              note.className = "opened";
+              note.textContent = "opened";
+              td.appendChild(note);
+            }
+          }
+          tr.appendChild(td);
+        });
+      table.appendChild(tr);
+    });
+    panel.appendChild(table);
+    return panel;
+  }
+
+  function toggleHistory(eventId) {
+    if (expanded[eventId]) {
+      delete expanded[eventId];
+      renderSlate();
+      return;
+    }
+    expanded[eventId] = true;
+    renderSlate();
+    refreshHistory(eventId);
+  }
+
+  function refreshHistory(eventId) {
+    if (historyCache[eventId]) return;
+    load("/api/history/" + encodeURIComponent(eventId))
+      .then(function (data) {
+        if (!data) return;
+        historyCache[eventId] = data;
+        renderSlate();
+      })
+      .catch(function () {
+        historyCache[eventId] = { changes: [], count: 0, error: "Could not load history." };
+        renderSlate();
+      });
   }
 
   /* Counted from the games on screen rather than taken from the payload, so
@@ -1032,6 +1232,13 @@
   function render() {
     if (!state) return;
     var meta = state.meta;
+    /* A finished scan may have recorded new moves, so any panel already open
+       has to come from the server again rather than from the cache. */
+    if (meta.updated_at_utc !== lastScanStamp) {
+      lastScanStamp = meta.updated_at_utc;
+      historyCache = {};
+      Object.keys(expanded).forEach(refreshHistory);
+    }
     if (meta.updated_at_et) {
       els.stamp.innerHTML = "";
       var strong = document.createElement("strong");
