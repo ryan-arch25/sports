@@ -355,11 +355,15 @@
     <div id="slate"></div>
     <div class="empty" id="slateEmpty" hidden></div>
     <p class="legend">
+      Green is a price comparison, not a prediction: it means DraftKings is paying at
+      least 0.5% better than Pinnacle on that side.
       DraftKings cells read <span class="key good">green</span> when the edge against the
       sharp book is 0.5% or better, <span class="key bad">red</span> at −0.5% or worse, and
       stay grey in between. The edge weighs the number and the price together, so a better
       number bought with worse juice is not green. Rows marked
       <span class="key tag">est.</span> were priced with the published half-point estimate.
+      Moneylines longer than +400 or shorter than −400 are left plain: a better price on a
+      long shot is real but not actionable.
     </p>
   </section>
 
@@ -995,6 +999,9 @@
       els.stamp.textContent = meta.scanning ? "Running the first scan…"
                                             : "No scan has finished yet.";
     }
+    var warnings = meta.warnings || [];
+    els.notice.hidden = !warnings.length;
+    if (warnings.length) els.notice.textContent = warnings.join(" · ");
     els.error.hidden = !meta.error;
     if (meta.error) {
       els.error.textContent = "Last refresh failed: " + meta.error +

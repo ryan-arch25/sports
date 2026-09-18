@@ -259,3 +259,78 @@ class TestEstimatedTagPerRow:
         slate = build_slate(sample_games, rows_for(sample_games, cfg))
         game = next(g for day in slate for g in day["games"] if g["event_id"] == "g2michigan")
         assert all(side["estimated"] is False for side in game["sides"])
+
+
+class TestLongshotMoneylines:
+    """A better price on a 14-to-1 shot is real but not actionable."""
+
+    def h2h(self, cfg, dk, sharp):
+        from cfb_edge.edges import evaluate_market
+
+        game = make_game({
+            "draftkings": {"h2h": dk},
+            "pinnacle": {"h2h": sharp},
+        })
+        return {r.side: r for r in evaluate_market(game, "h2h", cfg)}
+
+    def test_a_long_dog_is_left_plain(self, cfg):
+        rows = self.h2h(
+            cfg,
+            dk=[Outcome("Home Team", -700), Outcome("Away Team", 700)],
+            sharp=[Outcome("Home Team", -650), Outcome("Away Team", 460)],
+        )
+        assert rows["Away Team"].edge_pct > 0.5  # it would otherwise be green
+        assert compare_side(rows["Away Team"]) is None
+
+    def test_a_heavy_favourite_is_left_plain(self, cfg):
+        rows = self.h2h(
+            cfg,
+            dk=[Outcome("Home Team", -700), Outcome("Away Team", 700)],
+            sharp=[Outcome("Home Team", -650), Outcome("Away Team", 460)],
+        )
+        assert rows["Home Team"].edge_pct < -0.5  # it would otherwise be red
+        assert compare_side(rows["Home Team"]) is None
+
+    @pytest.mark.parametrize("price,coloured", [
+        (399, True), (400, True), (401, False), (-399, True), (-400, True), (-401, False),
+    ])
+    def test_the_boundary(self, cfg, price, coloured):
+        from cfb_edge.edges import evaluate_market
+        from cfb_edge.models import Outcome as O
+
+        other = -120 if price > 0 else 120
+        game = make_game({
+            "draftkings": {"h2h": [O("Home Team", price), O("Away Team", other)]},
+            "pinnacle": {"h2h": [O("Home Team", price), O("Away Team", other)]},
+        })
+        row = next(r for r in evaluate_market(game, "h2h", cfg) if r.side == "Home Team")
+        assert (compare_side(row) is not None) is coloured
+
+    def test_a_long_price_keeps_its_edge_to_itself(self, cfg):
+        rows = self.h2h(
+            cfg,
+            dk=[Outcome("Home Team", -700), Outcome("Away Team", 700)],
+            sharp=[Outcome("Home Team", -650), Outcome("Away Team", 460)],
+        )
+        cell = serialize_cell("h2h", rows["Away Team"])
+        assert cell["verdict"] is None
+        assert cell["show_edge"] is False
+        assert cell["price"] == "+700"  # the price is still shown, just plain
+
+    def test_spreads_and_totals_are_unaffected_by_the_rule(self, cfg):
+        from cfb_edge.edges import evaluate_market
+
+        game = make_game({
+            "draftkings": {"totals": [Outcome("Over", 520, 44.5), Outcome("Under", -700, 44.5)]},
+            "pinnacle": {"totals": [Outcome("Over", 460, 44.5), Outcome("Under", -650, 44.5)]},
+        })
+        rows = {r.side: r for r in evaluate_market(game, "totals", cfg)}
+        assert compare_side(rows["Over"]) is not None
+
+    def test_an_ordinary_moneyline_still_colours(self, cfg):
+        rows = self.h2h(
+            cfg,
+            dk=[Outcome("Home Team", -175), Outcome("Away Team", 155)],
+            sharp=[Outcome("Home Team", -145), Outcome("Away Team", 130)],
+        )
+        assert compare_side(rows["Away Team"]) == BETTER

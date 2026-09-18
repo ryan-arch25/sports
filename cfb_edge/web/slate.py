@@ -25,6 +25,11 @@ NEUTRAL = "neutral"
 # grey and keeps its number to itself.
 NEUTRAL_BAND_PCT = 0.5
 
+# A moneyline past this, either way, is left in plain text. A better price on a
+# 14-to-1 shot is real but not actionable, and colouring it green reads as a
+# recommendation the number cannot support.
+LONGSHOT_PRICE = 400.0
+
 # Which market each of a game's two display rows shows, in the order a
 # sportsbook lists them: away team on top with the Over, home team beneath with
 # the Under.
@@ -42,6 +47,8 @@ def compare_side(row: EdgeRow | None) -> str | None:
     None means there is nothing to compare against -- no sharp line, so no edge.
     """
     if row is None or row.edge_pct is None:
+        return None
+    if row.market == "h2h" and abs(float(row.dk_price)) > LONGSHOT_PRICE:
         return None
     if row.edge_pct >= NEUTRAL_BAND_PCT:
         return BETTER
@@ -70,6 +77,7 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
     """One market for one side: DK's offer, the sharp book's, and the verdict."""
     if row is None:
         return None
+    verdict = compare_side(row)
     return {
         "number": _number(market, row, prefix),
         "price": format_american(row.dk_price),
@@ -79,11 +87,16 @@ def serialize_cell(market: str, row: EdgeRow | None, prefix: str = "") -> dict[s
         "sharp_source": row.sharp_source or "",
         "line_diff": row.line_diff,
         "edge_pct": None if row.edge_pct is None else round(row.edge_pct, 2),
-        "verdict": compare_side(row),
+        "verdict": verdict,
         "translated": row.status == "translated",
         "estimated": row.is_estimated,
-        # The page prints the number only when it is worth reading.
-        "show_edge": row.edge_pct is not None and row.edge_pct >= NEUTRAL_BAND_PCT,
+        # The page prints the number only when it is worth reading, which is
+        # never for a cell it has decided not to colour.
+        "show_edge": (
+            verdict is not None
+            and row.edge_pct is not None
+            and row.edge_pct >= NEUTRAL_BAND_PCT
+        ),
         "has_sharp": row.sharp_price is not None,
     }
 

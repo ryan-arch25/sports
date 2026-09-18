@@ -6,6 +6,7 @@ the same code path.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -19,6 +20,9 @@ from cfb_edge.edges import EdgeRow, evaluate_games, rank, summarize
 from cfb_edge.models import Game, parse_games
 from cfb_edge.report import write_csv, write_json
 from cfb_edge.store import connect, log_run
+
+
+log = logging.getLogger("cfb_edge.scan")
 
 
 def make_run_id(now: datetime | None = None) -> str:
@@ -174,29 +178,41 @@ def persist(cfg: Config, result: ScanResult, options: ScanOptions) -> ScanResult
             result.min_edge, result.meta(cfg),
         )
     if options.write_db:
-        conn = connect(cfg.db_path)
         try:
-            log_run(
-                conn,
-                run_id=result.run_id,
-                started_at=result.started_at,
-                fetched_at=result.snapshot.fetched_at,
-                source=result.source,
-                cache_path=str(result.snapshot.path),
-                sport=cfg.sport,
-                markets=result.markets,
-                min_edge_pct=result.min_edge,
-                bankroll=cfg.bankroll,
-                kelly_fraction=cfg.kelly_fraction,
-                n_games=len(result.games),
-                rows=result.rows,
-                quota_remaining=result.snapshot.quota.get("remaining"),
-                csv_path=str(result.csv_path) if result.csv_path else None,
-                json_path=str(result.json_path) if result.json_path else None,
-            )
-        finally:
-            conn.close()
+            _log_to_db(cfg, result)
+        except Exception as exc:  # noqa: BLE001 - the board matters more than the log
+            # The run log is a record, not the product. A database that cannot be
+            # written -- a schema left behind by an older version, a volume that
+            # is not mounted -- must not cost anyone the scan.
+            warning = f"could not write the run log ({type(exc).__name__}: {exc})"
+            log.warning(warning)
+            result.warnings.append(warning)
     return result
+
+
+def _log_to_db(cfg: Config, result: ScanResult) -> None:
+    conn = connect(cfg.db_path)
+    try:
+        log_run(
+            conn,
+            run_id=result.run_id,
+            started_at=result.started_at,
+            fetched_at=result.snapshot.fetched_at,
+            source=result.source,
+            cache_path=str(result.snapshot.path),
+            sport=cfg.sport,
+            markets=result.markets,
+            min_edge_pct=result.min_edge,
+            bankroll=cfg.bankroll,
+            kelly_fraction=cfg.kelly_fraction,
+            n_games=len(result.games),
+            rows=result.rows,
+            quota_remaining=result.snapshot.quota.get("remaining"),
+            csv_path=str(result.csv_path) if result.csv_path else None,
+            json_path=str(result.json_path) if result.json_path else None,
+        )
+    finally:
+        conn.close()
 
 
 def scan_key(row: EdgeRow) -> tuple[str, str, str]:

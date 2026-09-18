@@ -806,3 +806,58 @@ class TestPageShell:
         body = signed_in.get("/").text
         assert "No edges above 1% right now." in body
         assert "renderBest" in body
+
+
+class TestResilienceAndLegend:
+    def test_a_broken_run_log_does_not_cost_the_scan(self, web_cfg, tmp_path):
+        """A database the scan cannot write must not blank the board."""
+        import asyncio
+
+        from cfb_edge.scan import ScanOptions
+
+        # A file that is not a database at all: any write will raise.
+        broken = tmp_path / "broken.sqlite"
+        broken.write_bytes(b"this is not a database")
+        web_cfg.db_path = broken
+        dash = Dashboard(
+            web_cfg,
+            options=ScanOptions(
+                markets=("h2h", "spreads", "totals"), min_edge=0.0,
+                cache_file=FIXTURE, write_files=False, write_db=True,
+            ),
+            display_min_edge=1.0,
+        )
+        assert asyncio.run(dash.refresh()) is True
+        assert dash.state.rows, "the board should still be scored"
+        assert dash.state.error is None
+        assert any("run log" in w for w in dash.state.warnings)
+
+    def test_the_warning_reaches_the_page(self, web_cfg, tmp_path):
+        import asyncio
+
+        from cfb_edge.scan import ScanOptions
+
+        broken = tmp_path / "broken.sqlite"
+        broken.write_bytes(b"nope")
+        web_cfg.db_path = broken
+        dash = Dashboard(
+            web_cfg,
+            options=ScanOptions(
+                markets=("h2h",), min_edge=0.0, cache_file=FIXTURE,
+                write_files=False, write_db=True,
+            ),
+        )
+        asyncio.run(dash.refresh())
+        assert dash.state.as_dict()["meta"]["warnings"]
+
+    def test_a_clean_scan_carries_no_warnings(self, loaded):
+        assert loaded.get("/api/state").json()["meta"]["warnings"] == []
+
+    def test_the_legend_leads_with_what_green_means(self, signed_in):
+        body = signed_in.get("/").text
+        assert ("Green is a price comparison, not a prediction: it means DraftKings "
+                "is paying at\n      least 0.5% better than Pinnacle on that side.") in body
+
+    def test_the_legend_explains_the_longshot_rule(self, signed_in):
+        body = signed_in.get("/").text
+        assert "Moneylines longer than +400 or shorter than −400 are left plain" in body

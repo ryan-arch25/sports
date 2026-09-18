@@ -438,7 +438,25 @@ The `clv` view joins on event/market/side, not on the number, so check
 `cfb-edge clv` command does that adjustment for your own bets; this view does
 not.
 
-The schema migrates itself forward on open, so an older database keeps working.
+### The schema migrates itself
+
+The tables, their columns, their indexes and the views are declared once, in
+`TABLES` and `VIEWS` in `cfb_edge/store.py`, and the migration is derived from
+that declaration rather than maintained beside it. Opening a database creates
+what is missing, adds columns later versions introduced (`ALTER TABLE ADD
+COLUMN`), then builds indexes, then rebuilds the views. Order matters: an index
+over a column an `ALTER` has not added yet is exactly the failure this prevents.
+
+That ordering is not hypothetical. `CREATE TABLE IF NOT EXISTS` is a silent
+no-op on a table that already exists, so a new column never arrives that way —
+and `CREATE INDEX IF NOT EXISTS ... ON bets (person)` then raises `no such
+column: person`, because the *index* does not exist so nothing is skipped. On a
+volume holding a database from before the Log tab, that took down every scan.
+
+A scan migrates only what it writes — `runs` and `observations` — so nothing
+about the bet log can stop the board being scored. And if the run log cannot be
+written at all, the scan records a warning and carries on rather than failing:
+the log is a record, the board is the product.
 
 ## Discord alerts
 
@@ -510,6 +528,10 @@ Because the edge is measured against the *fair* price rather than the sharp
 book's posted one, a DraftKings price that merely matches Pinnacle reads red —
 it is telling you there is no value there, not that DK is out of line. Widen
 `NEUTRAL_BAND_PCT` in `cfb_edge/web/slate.py` if you would rather see more grey.
+
+Moneylines longer than +400 or shorter than −400 are left in plain text, never
+coloured: a better price on a 14-to-1 shot is real, but it is not actionable and
+the colour reads as a recommendation the number cannot support.
 
 A market neither book posts — a moneyline on a 58-point spread, say — reads
 **no line** in light text rather than a dash. Rows priced through the published
@@ -649,7 +671,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-663 tests, no network access required. The odds conversion and de-vig math are
+695 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -658,7 +680,8 @@ guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging an
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
 (`test_web.py`), the Slate view's comparisons and grouping (`test_slate.py`),
-the shared bet log and its CLV (`test_betlog.py`),
+the shared bet log and its CLV (`test_betlog.py`), the schema migration against
+a database from before the Log tab (`test_store.py`),
 the container entrypoint that prepares a mounted volume (`test_entrypoint.py`),
 and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).

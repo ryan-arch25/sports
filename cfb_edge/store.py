@@ -3,151 +3,183 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
 from cfb_edge.edges import EdgeRow
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS runs (
-    run_id            TEXT PRIMARY KEY,
-    started_at_utc    TEXT NOT NULL,
-    fetched_at_utc    TEXT,
-    source            TEXT,
-    cache_path        TEXT,
-    sport             TEXT,
-    markets           TEXT,
-    min_edge_pct      REAL,
-    bankroll          REAL,
-    kelly_fraction    REAL,
-    n_games           INTEGER,
-    n_rows            INTEGER,
-    n_bets            INTEGER,
-    quota_remaining   TEXT,
-    csv_path          TEXT,
-    json_path         TEXT
-);
 
-CREATE TABLE IF NOT EXISTS observations (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id            TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    observed_at_utc   TEXT NOT NULL,
-    event_id          TEXT NOT NULL,
-    commence_time_utc TEXT NOT NULL,
-    home_team         TEXT,
-    away_team         TEXT,
-    market            TEXT NOT NULL,
-    side              TEXT NOT NULL,
-    dk_point          REAL,
-    dk_price          REAL,
-    dk_prob           REAL,
-    sharp_source      TEXT,
-    sharp_books       TEXT,
-    sharp_point       REAL,
-    sharp_price       REAL,
-    sharp_hold        REAL,
-    fair_prob         REAL,
-    fair_american     REAL,
-    edge_pct          REAL,
-    ev_per_100        REAL,
-    stake             REAL,
-    status            TEXT,
-    above_min_edge    INTEGER,
-    translated_from   REAL,
-    translation_source TEXT,
-    note              TEXT,
-    UNIQUE (run_id, event_id, market, side, dk_point)
-);
+@dataclass(frozen=True)
+class Table:
+    """One table, declared once so the migration cannot drift from it."""
 
--- Bets you actually placed, logged with `cfb-edge bets add`.
-CREATE TABLE IF NOT EXISTS bets (
-    bet_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    placed_at_utc     TEXT NOT NULL,
-    event_id          TEXT NOT NULL,
-    commence_time_utc TEXT,
-    home_team         TEXT,
-    away_team         TEXT,
-    market            TEXT NOT NULL,
-    side              TEXT NOT NULL,
-    point             REAL,
-    price             REAL NOT NULL,
-    stake             REAL NOT NULL,
-    book              TEXT,
-    fair_prob         REAL,
-    edge_pct          REAL,
-    note              TEXT,
-    person            TEXT,
-    result            TEXT,
-    settled_at_utc    TEXT
-);
+    columns: tuple[tuple[str, str], ...]
+    constraints: tuple[str, ...] = ()
+    indexes: tuple[tuple[str, str], ...] = ()
 
--- One row per alert actually sent, so the same price is never announced twice.
-CREATE TABLE IF NOT EXISTS notifications (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    sent_at_utc  TEXT NOT NULL,
-    channel      TEXT NOT NULL,
-    event_id     TEXT NOT NULL,
-    market       TEXT NOT NULL,
-    side         TEXT NOT NULL,
-    line_key     TEXT NOT NULL,
-    price        REAL,
-    edge_pct     REAL,
-    run_id       TEXT,
-    UNIQUE (channel, event_id, market, side, line_key, price)
-);
 
-CREATE INDEX IF NOT EXISTS idx_bets_event ON bets (event_id, market, side);
-CREATE INDEX IF NOT EXISTS idx_bets_person ON bets (person);
-CREATE INDEX IF NOT EXISTS idx_obs_event ON observations (event_id, market, side);
-CREATE INDEX IF NOT EXISTS idx_obs_kickoff ON observations (commence_time_utc);
-CREATE INDEX IF NOT EXISTS idx_obs_run ON observations (run_id);
-CREATE INDEX IF NOT EXISTS idx_obs_observed ON observations (observed_at_utc);
+TABLES: dict[str, Table] = {
+    "runs": Table(
+        columns=(
+            ("run_id", "TEXT PRIMARY KEY"),
+            ("started_at_utc", "TEXT NOT NULL"),
+            ("fetched_at_utc", "TEXT"),
+            ("source", "TEXT"),
+            ("cache_path", "TEXT"),
+            ("sport", "TEXT"),
+            ("markets", "TEXT"),
+            ("min_edge_pct", "REAL"),
+            ("bankroll", "REAL"),
+            ("kelly_fraction", "REAL"),
+            ("n_games", "INTEGER"),
+            ("n_rows", "INTEGER"),
+            ("n_bets", "INTEGER"),
+            ("quota_remaining", "TEXT"),
+            ("csv_path", "TEXT"),
+            ("json_path", "TEXT"),
+        ),
+    ),
+    "observations": Table(
+        columns=(
+            ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            ("run_id", "TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE"),
+            ("observed_at_utc", "TEXT NOT NULL"),
+            ("event_id", "TEXT NOT NULL"),
+            ("commence_time_utc", "TEXT NOT NULL"),
+            ("home_team", "TEXT"),
+            ("away_team", "TEXT"),
+            ("market", "TEXT NOT NULL"),
+            ("side", "TEXT NOT NULL"),
+            ("dk_point", "REAL"),
+            ("dk_price", "REAL"),
+            ("dk_prob", "REAL"),
+            ("sharp_source", "TEXT"),
+            ("sharp_books", "TEXT"),
+            ("sharp_point", "REAL"),
+            ("sharp_price", "REAL"),
+            ("sharp_hold", "REAL"),
+            ("fair_prob", "REAL"),
+            ("fair_american", "REAL"),
+            ("edge_pct", "REAL"),
+            ("ev_per_100", "REAL"),
+            ("stake", "REAL"),
+            ("status", "TEXT"),
+            ("above_min_edge", "INTEGER"),
+            ("translated_from", "REAL"),
+            ("translation_source", "TEXT"),
+            ("note", "TEXT"),
+        ),
+        constraints=("UNIQUE (run_id, event_id, market, side, dk_point)",),
+        indexes=(
+            ("idx_obs_event", "event_id, market, side"),
+            ("idx_obs_kickoff", "commence_time_utc"),
+            ("idx_obs_run", "run_id"),
+            ("idx_obs_observed", "observed_at_utc"),
+        ),
+    ),
+    "bets": Table(
+        columns=(
+            ("bet_id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            ("placed_at_utc", "TEXT NOT NULL"),
+            ("event_id", "TEXT NOT NULL"),
+            ("commence_time_utc", "TEXT"),
+            ("home_team", "TEXT"),
+            ("away_team", "TEXT"),
+            ("market", "TEXT NOT NULL"),
+            ("side", "TEXT NOT NULL"),
+            ("point", "REAL"),
+            ("price", "REAL NOT NULL"),
+            ("stake", "REAL NOT NULL"),
+            ("book", "TEXT"),
+            ("fair_prob", "REAL"),
+            ("edge_pct", "REAL"),
+            ("note", "TEXT"),
+            ("person", "TEXT"),
+            ("result", "TEXT"),
+            ("settled_at_utc", "TEXT"),
+        ),
+        indexes=(
+            ("idx_bets_event", "event_id, market, side"),
+            ("idx_bets_person", "person"),
+        ),
+    ),
+    "notifications": Table(
+        columns=(
+            ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            ("sent_at_utc", "TEXT NOT NULL"),
+            ("channel", "TEXT NOT NULL"),
+            ("event_id", "TEXT NOT NULL"),
+            ("market", "TEXT NOT NULL"),
+            ("side", "TEXT NOT NULL"),
+            ("line_key", "TEXT NOT NULL"),
+            ("price", "REAL"),
+            ("edge_pct", "REAL"),
+            ("run_id", "TEXT"),
+        ),
+        constraints=("UNIQUE (channel, event_id, market, side, line_key, price)",),
+    ),
+}
 
--- Last snapshot of each side taken before kickoff: the closing line.
-CREATE VIEW IF NOT EXISTS closing_lines AS
-SELECT o.*
-FROM observations o
-JOIN (
-    SELECT event_id, market, side, MAX(observed_at_utc) AS last_observed
-    FROM observations
-    WHERE observed_at_utc <= commence_time_utc
-    GROUP BY event_id, market, side
-) last
-  ON o.event_id = last.event_id
- AND o.market = last.market
- AND o.side = last.side
- AND o.observed_at_utc = last.last_observed;
+# What the scan writes. Nothing here touches the bet log, so a problem with the
+# Log tab's tables can never stop the board from being scored.
+SCAN_TABLES = ("runs", "observations")
+LOG_TABLES = ("bets", "notifications")
 
--- Every observation paired with that side's closing line. A positive
--- clv_prob_delta means the market moved toward the bet after it was logged.
-CREATE VIEW IF NOT EXISTS clv AS
-SELECT
-    o.run_id,
-    o.observed_at_utc,
-    o.event_id,
-    o.commence_time_utc,
-    o.away_team || ' @ ' || o.home_team AS matchup,
-    o.market,
-    o.side,
-    o.dk_point,
-    o.dk_price,
-    o.dk_prob,
-    o.edge_pct,
-    o.stake,
-    o.status,
-    c.observed_at_utc AS closing_observed_at_utc,
-    c.dk_point        AS closing_dk_point,
-    c.dk_price        AS closing_dk_price,
-    c.dk_prob         AS closing_dk_prob,
-    c.fair_prob       AS closing_fair_prob,
-    (c.dk_prob - o.dk_prob) AS clv_prob_delta
-FROM observations o
-JOIN closing_lines c
-  ON c.event_id = o.event_id AND c.market = o.market AND c.side = o.side;
-"""
+# Views are rebuilt every time rather than created-if-missing, so an old
+# definition left by an earlier version cannot linger.
+VIEWS: dict[str, tuple[tuple[str, ...], str]] = {
+    "closing_lines": (
+        ("observations",),
+        """
+        CREATE VIEW closing_lines AS
+        SELECT o.*
+        FROM observations o
+        JOIN (
+            SELECT event_id, market, side, MAX(observed_at_utc) AS last_observed
+            FROM observations
+            WHERE observed_at_utc <= commence_time_utc
+            GROUP BY event_id, market, side
+        ) last
+          ON o.event_id = last.event_id
+         AND o.market = last.market
+         AND o.side = last.side
+         AND o.observed_at_utc = last.last_observed
+        """,
+    ),
+    "clv": (
+        ("observations",),
+        """
+        CREATE VIEW clv AS
+        SELECT
+            o.run_id,
+            o.observed_at_utc,
+            o.event_id,
+            o.commence_time_utc,
+            o.away_team || ' @ ' || o.home_team AS matchup,
+            o.market,
+            o.side,
+            o.dk_point,
+            o.dk_price,
+            o.dk_prob,
+            o.edge_pct,
+            o.stake,
+            o.status,
+            c.observed_at_utc AS closing_observed_at_utc,
+            c.dk_point        AS closing_dk_point,
+            c.dk_price        AS closing_dk_price,
+            c.dk_prob         AS closing_dk_prob,
+            c.fair_prob       AS closing_fair_prob,
+            (c.dk_prob - o.dk_prob) AS clv_prob_delta
+        FROM observations o
+        JOIN closing_lines c
+          ON c.event_id = o.event_id AND c.market = o.market AND c.side = o.side
+        """,
+    ),
+}
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -159,25 +191,77 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+def create_table_sql(name: str, table: Table) -> str:
+    body = [f"    {column} {declaration}" for column, declaration in table.columns]
+    body.extend(f"    {constraint}" for constraint in table.constraints)
+    return f"CREATE TABLE IF NOT EXISTS {name} (\n" + ",\n".join(body) + "\n)"
+
+
+def _alter_type(declaration: str) -> str:
+    """The part of a column declaration ALTER TABLE will accept.
+
+    SQLite refuses to add a NOT NULL column without a default, and cannot add a
+    primary key or a foreign key at all, so only the storage type carries over.
+    An existing database always has those original columns anyway; this is for
+    the ones added later, which are all plain and nullable.
+    """
+    return declaration.split()[0]
+
+
+def existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def migrate(conn: sqlite3.Connection, tables: Sequence[str] | None = None) -> list[str]:
+    """Bring a database up to the current schema, in place.
+
+    Order matters and is the whole point: create tables, then add columns that
+    later versions introduced, and only then build indexes and views. An index
+    over a column that an ALTER has not added yet is exactly the failure this
+    exists to prevent.
+
+    Returns a description of anything it changed, which is empty for a database
+    that was already current.
+    """
+    wanted = list(tables) if tables is not None else list(TABLES)
+    changes: list[str] = []
+
+    for name in wanted:
+        table = TABLES[name]
+        before = existing_columns(conn, name)
+        conn.execute(create_table_sql(name, table))
+        if not before:
+            changes.append(f"created {name}")
+        else:
+            for column, declaration in table.columns:
+                if column not in before:
+                    conn.execute(
+                        f"ALTER TABLE {name} ADD COLUMN {column} {_alter_type(declaration)}"
+                    )
+                    changes.append(f"added {name}.{column}")
+
+    for name in wanted:
+        for index, columns in TABLES[name].indexes:
+            conn.execute(f"CREATE INDEX IF NOT EXISTS {index} ON {name} ({columns})")
+
+    for view, (needs, sql) in VIEWS.items():
+        if all(table in wanted for table in needs):
+            conn.execute(f"DROP VIEW IF EXISTS {view}")
+            conn.execute(sql)
+
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
+    return changes
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
-    """Add columns that later versions introduced, leaving older rows intact."""
-    for table, column, decl in (
-        ("observations", "translated_from", "REAL"),
-        ("observations", "translation_source", "TEXT"),
-        ("bets", "person", "TEXT"),
-        ("bets", "result", "TEXT"),
-        ("bets", "settled_at_utc", "TEXT"),
-    ):
-        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if existing and column not in existing:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+def init_db(conn: sqlite3.Connection) -> None:
+    """Every table, for anything that touches the bet log."""
+    migrate(conn)
+
+
+def init_scan_db(conn: sqlite3.Connection) -> None:
+    """Only what a scan writes, so the log's tables cannot block one."""
+    migrate(conn, SCAN_TABLES)
 
 
 def _is_bet(row: EdgeRow, min_edge_pct: float) -> bool:
@@ -208,7 +292,7 @@ def log_run(
     json_path: str | None = None,
 ) -> int:
     """Insert the run header and one observation per evaluated DK line."""
-    init_db(conn)
+    init_scan_db(conn)
     observed_at = _iso(fetched_at)
     n_bets = sum(1 for r in rows if _is_bet(r, min_edge_pct))
     conn.execute(
