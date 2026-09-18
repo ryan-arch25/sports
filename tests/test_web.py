@@ -970,3 +970,75 @@ class TestHistoryEndpoint:
         assert payload["count"] == 1
         assert payload["changes"][0]["book_label"] == "DraftKings"
         assert payload["changes"][0]["number"] == "-6.5"
+
+
+class TestParlayEndpoints:
+    """The Log tab's API, as the page drives it."""
+
+    def a_parlay(self, **kwargs):
+        payload = {
+            "person": "RS", "bet_type": "parlay", "price": 905, "stake": 20,
+            "legs": [
+                {"event_id": "g2michigan", "market": "spreads",
+                 "side": "Michigan Wolverines", "point": 6.5, "price": 110},
+                {"event_id": "g2michigan", "market": "h2h",
+                 "side": "Michigan Wolverines", "point": None, "price": 230},
+            ],
+        }
+        payload.update(kwargs)
+        return payload
+
+    def test_posting_a_parlay_returns_the_log(self, signed_in):
+        payload = signed_in.post("/api/log", json=self.a_parlay()).json()
+        assert payload["bets"][0]["bet_type"] == "parlay"
+        assert len(payload["bets"][0]["legs"]) == 2
+
+    def test_a_bad_parlay_is_a_400(self, signed_in):
+        response = signed_in.post("/api/log", json=self.a_parlay(legs=[]))
+        assert response.status_code == 400
+        assert "between 2 and 10" in response.json()["detail"]
+
+    def test_settling_a_leg(self, signed_in):
+        bet_id = signed_in.post("/api/log", json=self.a_parlay()).json()["bets"][0]["bet_id"]
+        payload = signed_in.post(
+            "/api/log/settle", json={"bet_id": bet_id, "result": "won", "leg_no": 1}
+        ).json()
+        bet = payload["bets"][0]
+        assert bet["legs"][0]["result"] == "won"
+        assert bet["result"] == "open"  # the other leg has not been graded
+
+    def test_grading_every_leg_settles_the_ticket(self, signed_in):
+        bet_id = signed_in.post("/api/log", json=self.a_parlay()).json()["bets"][0]["bet_id"]
+        for leg_no in (1, 2):
+            payload = signed_in.post(
+                "/api/log/settle",
+                json={"bet_id": bet_id, "result": "won", "leg_no": leg_no},
+            ).json()
+        assert payload["bets"][0]["result"] == "won"
+        assert payload["bets"][0]["profit"] > 0
+
+    def test_grading_a_ticket_directly_is_a_400(self, signed_in):
+        bet_id = signed_in.post("/api/log", json=self.a_parlay()).json()["bets"][0]["bet_id"]
+        response = signed_in.post("/api/log/settle", json={"bet_id": bet_id, "result": "won"})
+        assert response.status_code == 400
+
+    def test_a_single_still_settles_the_old_way(self, signed_in):
+        single = {"person": "RS", "event_id": "g2michigan", "market": "spreads",
+                  "side": "Michigan Wolverines", "point": 6.5, "price": 110, "stake": 25}
+        bet_id = signed_in.post("/api/log", json=single).json()["bets"][0]["bet_id"]
+        payload = signed_in.post(
+            "/api/log/settle", json={"bet_id": bet_id, "result": "won"}
+        ).json()
+        assert payload["bets"][0]["result"] == "won"
+        assert payload["bets"][0]["legs"] == []
+
+    def test_a_custom_alt_line_posts(self, signed_in):
+        custom = {"person": "RS", "event_id": "g2michigan", "market": "team_totals",
+                  "side": "Michigan Wolverines Over", "point": 24.5, "price": -115,
+                  "stake": 25}
+        payload = signed_in.post("/api/log", json=custom).json()
+        assert payload["bets"][0]["pick"] == "Michigan Wolverines Over 24.5"
+
+    def test_the_log_names_the_markets_a_leg_may_use(self, signed_in):
+        markets = signed_in.get("/api/log").json()["markets"]
+        assert "team_totals" in markets and "spreads" in markets

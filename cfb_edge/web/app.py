@@ -310,7 +310,7 @@ def create_app(
 
         conn = log_connection()
         try:
-            return JSONResponse(log_payload(conn))
+            return JSONResponse(log_payload(conn, tables=dashboard.halfpoint_tables))
         finally:
             conn.close()
 
@@ -328,7 +328,7 @@ def create_app(
         conn = log_connection()
         try:
             add_bet(conn, payload)
-            return JSONResponse(log_payload(conn))
+            return JSONResponse(log_payload(conn, tables=dashboard.halfpoint_tables))
         except BetLogError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
         finally:
@@ -336,19 +336,25 @@ def create_app(
 
     @app.post("/api/log/settle")
     async def api_log_settle(request: Request, _: None = Depends(require_auth)) -> JSONResponse:
-        from cfb_edge.web.betlog import BetLogError, log_payload, settle
+        from cfb_edge.web.betlog import BetLogError, log_payload, settle, settle_leg
 
         try:
             payload = await request.json()
             bet_id = int(payload["bet_id"])
             result = str(payload["result"])
+            # A parlay is graded one leg at a time; the ticket follows from them.
+            raw_leg = payload.get("leg_no")
+            leg_no = None if raw_leg in (None, "") else int(raw_leg)
         except Exception:  # noqa: BLE001 - any malformed body is a bad request
             raise HTTPException(status_code=400, detail="expected bet_id and result") from None
 
         conn = log_connection()
         try:
-            settle(conn, bet_id, result)
-            return JSONResponse(log_payload(conn))
+            if leg_no is None:
+                settle(conn, bet_id, result)
+            else:
+                settle_leg(conn, bet_id, leg_no, result)
+            return JSONResponse(log_payload(conn, tables=dashboard.halfpoint_tables))
         except BetLogError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
         finally:

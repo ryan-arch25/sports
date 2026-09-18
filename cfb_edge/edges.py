@@ -236,7 +236,7 @@ def _row_against(
     translation_source = None
 
     if not _same_number(dk_point, sharp_side.point):
-        priced = _translate(table, market, side, sharp_side.point, dk_point, fair_prob)
+        priced = translate_prob(table, market, side, sharp_side.point, dk_point, fair_prob)
         if priced is None:
             row = _empty_row(
                 game, market, side, dk_point, dk_price, DIFFERENT_NUMBER,
@@ -306,7 +306,7 @@ def as_tables(table: Any) -> list[Any]:
     return [table]
 
 
-def _translate(
+def translate_prob(
     table: Any,
     market: str,
     side: str,
@@ -314,7 +314,13 @@ def _translate(
     dk_point: float | None,
     fair_prob: float,
 ) -> tuple[float, str] | None:
-    """Fair probability at DK's number, and which table got it there."""
+    """Move a fair probability from one number to another on the same side.
+
+    Returns (probability, which table did it), or None when the move cannot be
+    priced: a market the half-point table does not model, a gap wider than the
+    table's `max_move`, or a sample too thin to mean anything. Callers are
+    expected to show nothing rather than guess.
+    """
     tables = as_tables(table)
     if not tables or sharp_point is None or dk_point is None:
         return None
@@ -395,4 +401,5 @@ __all__ = [
     "format_point",
     "rank",
     "summarize",
+    "translate_prob",
 ]

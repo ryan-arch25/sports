@@ -111,6 +111,9 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   }
   .field { display: flex; flex-direction: column; gap: 6px; }
+  /* `display: flex` on .field outranks the hidden attribute's own rule, so the
+     custom-line and parlay fields would stay on screen in the wrong mode. */
+  [hidden] { display: none !important; }
   .field > label, .stat-label {
     font-size: 12px; font-weight: 500; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.06em;
@@ -244,6 +247,33 @@
   .legend .key { color: var(--ink-2); }
 
   /* Log ------------------------------------------------------------------ */
+  .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px;
+            overflow: hidden; }
+  .toggle button { border: 0; border-radius: 0; padding: 7px 14px; background: none;
+                   color: var(--muted); font: 500 13px/1 Inter, sans-serif;
+                   cursor: pointer; }
+  .toggle button.on { background: var(--accent); color: var(--accent-ink); }
+  .legs { list-style: none; margin: 10px 0 0; padding: 0; width: 100%; }
+  .legs li { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px;
+             border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px;
+             background: var(--panel-2); font-size: 13px; }
+  .legs .leg-no { color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+  .legs .leg-text { flex: 1 1 auto; font-family: "IBM Plex Mono", monospace;
+                    font-variant-numeric: tabular-nums; }
+  .legs .leg-remove { flex: 0 0 auto; padding: 0 7px; border: 0; background: none;
+                      color: var(--muted); font-size: 16px; line-height: 1;
+                      cursor: pointer; }
+  .legs .leg-remove:hover { color: var(--bad); }
+  /* A ticket and the legs it is made of, so the table reads as one bet. */
+  tr.leg-row td { color: var(--muted); border-bottom: 0; padding-top: 2px;
+                  padding-bottom: 2px; }
+  tr.leg-row td.game, tr.leg-row td.pick { padding-left: 22px; }
+  tr.ticket td { border-bottom: 0; }
+  .ticket-state { margin-left: 0; font-size: 11px; text-transform: uppercase;
+                  letter-spacing: 0.06em; color: var(--muted); }
+  .ticket-state.won { color: var(--good); }
+  .ticket-state.lost { color: var(--bad); }
+
   .stats { display: flex; flex-wrap: wrap; gap: 1px; margin-bottom: var(--gap);
            background: var(--line); border: 1px solid var(--line);
            border-radius: var(--radius); overflow: hidden; }
@@ -425,6 +455,13 @@
           <input id="logPerson" type="text" placeholder="Initials" required maxlength="40">
         </div>
         <div class="field">
+          <label>Type</label>
+          <div class="toggle" id="logType">
+            <button type="button" data-type="single" class="on">Single</button>
+            <button type="button" data-type="parlay">Parlay</button>
+          </div>
+        </div>
+        <div class="field">
           <label for="logGame">Game</label>
           <select id="logGame" required></select>
         </div>
@@ -432,9 +469,26 @@
           <label for="logPick">Pick</label>
           <select id="logPick" required></select>
         </div>
+        <div class="field custom-only" id="logMarketField" hidden>
+          <label for="logMarket">Market</label>
+          <select id="logMarket"></select>
+        </div>
+        <div class="field custom-only" id="logSideField" hidden>
+          <label for="logSide">Side</label>
+          <select id="logSide"></select>
+        </div>
+        <div class="field" id="logLineField">
+          <label for="logLine">Line</label>
+          <input id="logLine" type="number" step="0.5" placeholder="-23.5">
+        </div>
         <div class="field">
-          <label for="logPrice">DK price</label>
+          <label for="logPrice" id="logPriceLabel">DK price</label>
           <input id="logPrice" type="number" step="1" required>
+        </div>
+        <button type="button" id="logAddLeg" class="parlay-only" hidden>Add leg</button>
+        <div class="field parlay-only" id="logCombinedField" hidden>
+          <label for="logCombined">Combined price</label>
+          <input id="logCombined" type="number" step="1" placeholder="+905">
         </div>
         <div class="field">
           <label for="logStake">Stake</label>
@@ -446,6 +500,7 @@
         </div>
         <button class="primary" type="submit" id="logSubmit">Log bet</button>
       </form>
+      <ul class="legs" id="logLegs" hidden></ul>
     </div>
     <div class="banner" id="logError" hidden></div>
     <h2 class="day">Everyone</h2>
@@ -495,7 +550,12 @@
     logEmpty: el("logEmpty"), logForm: el("logForm"), logError: el("logError"),
     logPerson: el("logPerson"), logGame: el("logGame"), logPick: el("logPick"),
     logPrice: el("logPrice"), logStake: el("logStake"), logDate: el("logDate"),
-    logSubmit: el("logSubmit")
+    logSubmit: el("logSubmit"), logType: el("logType"), logMarket: el("logMarket"),
+    logSide: el("logSide"), logLine: el("logLine"), logLegs: el("logLegs"),
+    logAddLeg: el("logAddLeg"), logCombined: el("logCombined"),
+    logMarketField: el("logMarketField"), logSideField: el("logSideField"),
+    logLineField: el("logLineField"), logCombinedField: el("logCombinedField"),
+    logPriceLabel: el("logPriceLabel")
   };
 
   function store(key, value) {
@@ -1059,39 +1119,207 @@
     fillPickOptions();
   }
 
-  function fillPickOptions() {
+  var CUSTOM = "custom";
+  var LOG_MARKETS = [
+    ["spreads", "Spread"], ["totals", "Total"],
+    ["team_totals", "Team total"], ["h2h", "Moneyline"]
+  ];
+  var betType = "single";
+  var legDraft = [];
+
+  function currentGame() {
     var eventId = els.logGame.value;
-    var game = null;
-    (state.slate || []).forEach(function (day) {
-      day.games.forEach(function (g) { if (g.event_id === eventId) game = g; });
+    var found = null;
+    (state && state.slate || []).forEach(function (day) {
+      day.games.forEach(function (g) { if (g.event_id === eventId) found = g; });
     });
-    els.logPick.innerHTML = "";
-    if (!game) return;
-    game.sides.forEach(function (side) {
-      [["spread", "spreads", side.label], ["total", "totals", side.total_label],
-       ["h2h", "h2h", side.label]].forEach(function (entry) {
-        var data = side[entry[0]];
-        if (!data || (!data.number && !data.price)) return;
-        var option = document.createElement("option");
-        option.value = JSON.stringify({
-          market: entry[1], side: entry[2],
-          point: data.number ? parseFloat(String(data.number).replace(/[^0-9.\-]/g, "")) : null,
-          price: data.price
-        });
-        option.textContent = (data.number ? data.number + " " : "") + data.price +
-          "  —  " + (entry[1] === "totals" ? side.total_label : side.label);
-        els.logPick.appendChild(option);
-      });
-    });
-    syncPrice();
+    return found;
   }
 
-  function syncPrice() {
+  function fillPickOptions() {
+    var game = currentGame();
+    els.logPick.innerHTML = "";
+    if (game) {
+      game.sides.forEach(function (side) {
+        [["spread", "spreads", side.label], ["total", "totals", side.total_label],
+         ["h2h", "h2h", side.label]].forEach(function (entry) {
+          var data = side[entry[0]];
+          if (!data || (!data.number && !data.price)) return;
+          var option = document.createElement("option");
+          option.value = JSON.stringify({
+            market: entry[1], side: entry[2],
+            point: data.number ? parseFloat(String(data.number).replace(/[^0-9.\-]/g, "")) : null,
+            price: data.price
+          });
+          option.textContent = (data.number ? data.number + " " : "") + data.price +
+            "  \u2014  " + (entry[1] === "totals" ? side.total_label : side.label);
+          els.logPick.appendChild(option);
+        });
+      });
+    }
+    /* Last, so the scanned numbers stay the easy choice and this is the escape
+       hatch for an alt line the scan never saw. */
+    var custom = document.createElement("option");
+    custom.value = CUSTOM;
+    custom.textContent = "Custom line\u2026";
+    els.logPick.appendChild(custom);
+    onPickChange();
+  }
+
+  function fillCustomMarkets() {
+    if (els.logMarket.options.length) return;
+    LOG_MARKETS.forEach(function (pair) {
+      var option = document.createElement("option");
+      option.value = pair[0];
+      option.textContent = pair[1];
+      els.logMarket.appendChild(option);
+    });
+  }
+
+  /* The side names must match what the scan stores, or the closing line can
+     never be found again: teams for a spread or moneyline, Over/Under for a
+     total, and "<Team> Over" for a team total, which is how the odds feed
+     keys them. */
+  function customSides(market, game) {
+    if (!game) return [];
+    if (market === "totals") return ["Over", "Under"];
+    if (market === "team_totals") {
+      return [game.away_team + " Over", game.away_team + " Under",
+              game.home_team + " Over", game.home_team + " Under"];
+    }
+    return [game.away_team, game.home_team];
+  }
+
+  function fillCustomSides() {
+    var game = currentGame();
+    var wanted = els.logSide.value;
+    var sides = customSides(els.logMarket.value, game);
+    els.logSide.innerHTML = "";
+    sides.forEach(function (name) {
+      var option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      els.logSide.appendChild(option);
+    });
+    /* Only restore the old choice if the new market still offers it: setting a
+       value that is not in the list leaves the select showing nothing at all. */
+    els.logSide.value = sides.indexOf(wanted) >= 0 ? wanted : (sides[0] || "");
+    showLineField(els.logMarket.value);
+  }
+
+  function showLineField(market) {
+    /* A moneyline has no number, and an empty box invites one that would make
+       the bet unfindable in the scan history. */
+    els.logLineField.hidden = market === "h2h";
+  }
+
+  function isCustom() { return els.logPick.value === CUSTOM; }
+
+  function onPickChange() {
+    var custom = isCustom();
+    els.logMarketField.hidden = !custom;
+    els.logSideField.hidden = !custom;
+    if (custom) {
+      fillCustomMarkets();
+      fillCustomSides();
+      return;
+    }
     if (!els.logPick.value) return;
     try {
       var pick = JSON.parse(els.logPick.value);
+      /* Prefilled, not locked: DK's alt lines sit either side of the main
+         number and this is where you move to one. */
+      els.logLine.value = pick.point === null ? "" : pick.point;
       els.logPrice.value = parseInt(String(pick.price).replace("+", ""), 10);
+      showLineField(pick.market);
     } catch (e) { /* leave whatever is there */ }
+  }
+
+  function selectionFromForm() {
+    var game = currentGame();
+    if (!game) throw new Error("pick a game");
+    var market, side;
+    if (isCustom()) {
+      market = els.logMarket.value;
+      side = els.logSide.value;
+      if (!market || !side) throw new Error("choose a market and a side");
+    } else {
+      var pick;
+      try { pick = JSON.parse(els.logPick.value); }
+      catch (e) { throw new Error("pick a side"); }
+      market = pick.market;
+      side = pick.side;
+    }
+    var price = parseFloat(els.logPrice.value);
+    if (isNaN(price)) throw new Error("enter a price");
+    var point = null;
+    if (market !== "h2h") {
+      point = parseFloat(els.logLine.value);
+      if (isNaN(point)) throw new Error("enter a line number");
+    }
+    return {
+      event_id: game.event_id, market: market, side: side, point: point,
+      price: price, matchup: game.matchup,
+      label: (point === null ? side : side + " " + (market === "spreads"
+        ? (point > 0 ? "+" + point : String(point)) : point))
+    };
+  }
+
+  function setBetType(type) {
+    betType = type;
+    Array.prototype.forEach.call(els.logType.children, function (button) {
+      button.className = button.dataset.type === type ? "on" : "";
+    });
+    var parlay = type === "parlay";
+    els.logAddLeg.hidden = !parlay;
+    els.logCombinedField.hidden = !parlay;
+    els.logPriceLabel.textContent = parlay ? "Leg price" : "DK price";
+    els.logSubmit.textContent = parlay ? "Log parlay" : "Log bet";
+    renderLegDraft();
+  }
+
+  function renderLegDraft() {
+    els.logLegs.innerHTML = "";
+    els.logLegs.hidden = betType !== "parlay" || !legDraft.length;
+    legDraft.forEach(function (leg, index) {
+      var li = document.createElement("li");
+      var number = document.createElement("span");
+      number.className = "leg-no";
+      number.textContent = (index + 1) + ".";
+      var text = document.createElement("span");
+      text.className = "leg-text";
+      text.textContent = leg.label + "  " + fmtAmerican(leg.price) + "  \u00b7  " + leg.matchup;
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "leg-remove";
+      remove.textContent = "\u00d7";
+      remove.title = "remove this leg";
+      remove.addEventListener("click", function () {
+        legDraft.splice(index, 1);
+        renderLegDraft();
+      });
+      li.appendChild(number); li.appendChild(text); li.appendChild(remove);
+      els.logLegs.appendChild(li);
+    });
+  }
+
+  function fmtAmerican(value) {
+    return (value > 0 ? "+" : "") + value;
+  }
+
+  function addLeg() {
+    var selection;
+    try { selection = selectionFromForm(); }
+    catch (e) { return showLogError(e.message); }
+    if (legDraft.length >= 10) return showLogError("a parlay tops out at 10 legs");
+    var duplicate = legDraft.some(function (leg) {
+      return leg.event_id === selection.event_id && leg.market === selection.market
+        && leg.side === selection.side;
+    });
+    if (duplicate) return showLogError("that selection is already on this ticket");
+    legDraft.push(selection);
+    showLogError("");
+    renderLegDraft();
   }
 
   function statTile(label, value, className) {
@@ -1105,6 +1333,85 @@
     body.textContent = value;
     box.appendChild(head); box.appendChild(body);
     return box;
+  }
+
+  function clvCell(tr, entry) {
+    var td = cell(tr, entry.clv_pct === null ? "\u2013" : fmtSigned(entry.clv_pct) + "%",
+      "num " + (entry.clv_pct > 0 ? "good" : entry.clv_pct < 0 ? "bad" : ""), "CLV");
+    if (entry.clv_pct !== null && entry.clv_estimated) {
+      var pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = "est.";
+      pill.title = "the closing line was moved to this number with the half-point table";
+      td.appendChild(pill);
+    }
+    return td;
+  }
+
+  function resultButtons(bet, leg) {
+    var td = document.createElement("td");
+    td.setAttribute("data-label", "Result");
+    var group = document.createElement("div");
+    group.className = "result-btns";
+    var current = leg ? leg.result : bet.result;
+    /* A parlay ticket is graded by its legs, so the only button it offers is
+       the one that reopens the whole thing. */
+    var choices = (!leg && bet.bet_type === "parlay")
+      ? [["open", "\u2014"]]
+      : [["won", "W"], ["lost", "L"], ["push", "P"], ["open", "\u2014"]];
+    choices.forEach(function (pair) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = pair[1];
+      button.title = leg ? pair[0] + " (leg " + leg.leg_no + ")" : pair[0];
+      if (current === pair[0]) button.className = "on";
+      button.addEventListener("click", function () {
+        settle(bet.bet_id, pair[0], leg ? leg.leg_no : null);
+      });
+      group.appendChild(button);
+    });
+    td.appendChild(group);
+    return td;
+  }
+
+  function betRow(bet) {
+    var tr = document.createElement("tr");
+    var parlay = bet.bet_type === "parlay";
+    if (parlay) tr.className = "ticket";
+    cell(tr, bet.placed_on, "", "Placed");
+    cell(tr, bet.person, "", "Who");
+    cell(tr, bet.matchup, "game", "Game");
+    var pick = cell(tr, parlay ? "" : bet.pick, "pick", "Pick");
+    if (parlay) {
+      var badge = document.createElement("span");
+      badge.className = "ticket-state " + bet.result;
+      badge.textContent = bet.result;
+      pick.appendChild(badge);
+    }
+    cell(tr, bet.price, "num", "Price");
+    cell(tr, fmtMoney(bet.stake), "num", "Stake");
+    cell(tr, bet.closing_price || "\u2013", "num", "Close");
+    clvCell(tr, bet);
+    cell(tr, bet.profit === null ? "\u2013" : fmtMoney(bet.profit),
+         "num " + (bet.profit > 0 ? "good" : bet.profit < 0 ? "bad" : ""), "Profit");
+    tr.appendChild(resultButtons(bet, null));
+    return tr;
+  }
+
+  function legRow(bet, leg) {
+    var tr = document.createElement("tr");
+    tr.className = "leg-row";
+    cell(tr, "", "", "");
+    cell(tr, "", "", "");
+    cell(tr, leg.matchup, "game", "Game");
+    cell(tr, leg.pick, "pick", "Pick");
+    cell(tr, leg.price || "\u2013", "num", "Price");
+    cell(tr, "", "num", "Stake");
+    cell(tr, leg.closing_price || "\u2013", "num", "Close");
+    clvCell(tr, leg);
+    cell(tr, "", "num", "Profit");
+    tr.appendChild(resultButtons(bet, leg));
+    return tr;
   }
 
   function renderLog() {
@@ -1142,34 +1449,10 @@
 
     els.logBets.innerHTML = "";
     logState.bets.forEach(function (bet) {
-      var tr = document.createElement("tr");
-      cell(tr, bet.placed_on, "", "Placed");
-      cell(tr, bet.person, "", "Who");
-      cell(tr, bet.matchup, "game", "Game");
-      cell(tr, bet.pick, "pick", "Pick");
-      cell(tr, bet.price, "num", "Price");
-      cell(tr, fmtMoney(bet.stake), "num", "Stake");
-      cell(tr, bet.closing_price || "–", "num", "Close");
-      cell(tr, bet.clv_pct === null ? "–" : fmtSigned(bet.clv_pct) + "%",
-           "num " + (bet.clv_pct > 0 ? "good" : bet.clv_pct < 0 ? "bad" : ""), "CLV");
-      cell(tr, bet.profit === null ? "–" : fmtMoney(bet.profit),
-           "num " + (bet.profit > 0 ? "good" : bet.profit < 0 ? "bad" : ""), "Profit");
-      var actions = document.createElement("td");
-      actions.setAttribute("data-label", "Result");
-      var group = document.createElement("div");
-      group.className = "result-btns";
-      [["won", "W"], ["lost", "L"], ["push", "P"], ["open", "—"]].forEach(function (pair) {
-        var button = document.createElement("button");
-        button.type = "button";
-        button.textContent = pair[1];
-        button.title = pair[0];
-        if (bet.result === pair[0]) button.className = "on";
-        button.addEventListener("click", function () { settle(bet.bet_id, pair[0]); });
-        group.appendChild(button);
+      els.logBets.appendChild(betRow(bet));
+      (bet.legs || []).forEach(function (leg) {
+        els.logBets.appendChild(legRow(bet, leg));
       });
-      actions.appendChild(group);
-      tr.appendChild(actions);
-      els.logBets.appendChild(tr);
     });
     els.logEmpty.hidden = logState.bets.length > 0;
   }
@@ -1187,10 +1470,10 @@
     els.logError.textContent = message || "";
   }
 
-  function settle(betId, result) {
+  function settle(betId, result, legNo) {
     load("/api/log/settle", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bet_id: betId, result: result })
+      body: JSON.stringify({ bet_id: betId, result: result, leg_no: legNo })
     }).then(function (data) {
       if (!data) return;
       logState = data;
@@ -1200,27 +1483,62 @@
   }
 
   els.logGame.addEventListener("change", fillPickOptions);
-  els.logPick.addEventListener("change", syncPrice);
+  els.logPick.addEventListener("change", onPickChange);
+  els.logMarket.addEventListener("change", fillCustomSides);
+  els.logAddLeg.addEventListener("click", addLeg);
+  els.logType.addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-type]");
+    if (button) setBetType(button.dataset.type);
+  });
+
+  function logBody() {
+    var common = {
+      person: els.logPerson.value,
+      stake: parseFloat(els.logStake.value),
+      placed_on: els.logDate.value || null
+    };
+    if (betType !== "parlay") {
+      var pick = selectionFromForm();
+      return Object.assign(common, {
+        bet_type: "single",
+        event_id: pick.event_id, market: pick.market, side: pick.side,
+        point: pick.point, price: pick.price
+      });
+    }
+    if (legDraft.length < 2) throw new Error("a parlay needs at least two legs");
+    var combined = parseFloat(els.logCombined.value);
+    if (isNaN(combined)) throw new Error("enter the combined price");
+    return Object.assign(common, {
+      bet_type: "parlay",
+      price: combined,
+      legs: legDraft.map(function (leg) {
+        return {
+          event_id: leg.event_id, market: leg.market, side: leg.side,
+          point: leg.point, price: leg.price
+        };
+      })
+    });
+  }
+
   els.logForm.addEventListener("submit", function (event) {
     event.preventDefault();
-    var pick;
-    try { pick = JSON.parse(els.logPick.value); } catch (e) { return showLogError("pick a side"); }
+    var body;
+    try { body = logBody(); }
+    catch (e) { return showLogError(e.message); }
     els.logSubmit.disabled = true;
     store("cfb-edge.person", els.logPerson.value);
     load("/api/log", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        person: els.logPerson.value,
-        event_id: els.logGame.value,
-        market: pick.market, side: pick.side, point: pick.point,
-        price: parseFloat(els.logPrice.value),
-        stake: parseFloat(els.logStake.value),
-        placed_on: els.logDate.value || null
-      })
+      body: JSON.stringify(body)
     }).then(function (data) {
       if (!data) return;
       logState = data;
       showLogError("");
+      if (betType === "parlay") {
+        legDraft = [];
+        els.logCombined.value = "";
+        renderLegDraft();
+      }
       renderLog();
     }).catch(function (err) {
       showLogError(err.message);
@@ -1322,6 +1640,7 @@
   setTheme(recall("cfb-edge.theme") === "light" ? "light" : "dark");
   els.logPerson.value = recall("cfb-edge.person") || "";
   els.logDate.value = new Date().toISOString().slice(0, 10);
+  setBetType("single");
   setTab(["slate", "log"].indexOf(recall("cfb-edge.tab")) >= 0 ? recall("cfb-edge.tab") : "edges");
   poll();
   window.setInterval(poll, POLL_MS);

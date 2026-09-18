@@ -157,6 +157,10 @@ class Dashboard:
             refresh_minutes=self.refresh_minutes,
         )
         self.alerter = Alerter(cfg)
+        # The tables the last scan priced with. The Log tab borrows them to put
+        # a closing line on an alt number, so it translates exactly as the
+        # board did rather than loading its own copy on every request.
+        self.halfpoint_tables: list = []
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
@@ -295,6 +299,7 @@ class Dashboard:
 
         rows = [serialize_row(row) for row in result.bets]
         self.state.rows = rows
+        self.halfpoint_tables = list(result.halfpoint_tables)
         slate_markets = [m for m in result.markets if m in MARKETS]
         best = shop_board(result.games, slate_markets, self.cfg, result.halfpoint_tables)
         # The slate keeps every game and both sides of every market, which the

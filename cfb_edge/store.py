@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 from cfb_edge.edges import EdgeRow
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -101,11 +101,37 @@ TABLES: dict[str, Table] = {
             ("person", "TEXT"),
             ("result", "TEXT"),
             ("settled_at_utc", "TEXT"),
+            # "single" or "parlay". NULL on rows written before parlays existed,
+            # which the log reads as a single.
+            ("bet_type", "TEXT"),
         ),
         indexes=(
             ("idx_bets_event", "event_id, market, side"),
             ("idx_bets_person", "person"),
         ),
+    ),
+    # A parlay's legs. Singles keep their one selection on the bets row, so
+    # nothing here needed backfilling when parlays arrived.
+    "bet_legs": Table(
+        columns=(
+            ("leg_id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            ("bet_id", "INTEGER NOT NULL"),
+            ("leg_no", "INTEGER NOT NULL"),
+            ("event_id", "TEXT NOT NULL"),
+            ("commence_time_utc", "TEXT"),
+            ("home_team", "TEXT"),
+            ("away_team", "TEXT"),
+            ("market", "TEXT NOT NULL"),
+            ("side", "TEXT NOT NULL"),
+            ("point", "REAL"),
+            # The leg's own price, which is what lets a pushed leg be divided
+            # back out of the combined price the way a sportsbook does it.
+            ("price", "REAL"),
+            ("result", "TEXT"),
+            ("settled_at_utc", "TEXT"),
+        ),
+        constraints=("UNIQUE (bet_id, leg_no)",),
+        indexes=(("idx_legs_bet", "bet_id"),),
     ),
     "line_history": Table(
         columns=(
@@ -165,7 +191,7 @@ TABLES: dict[str, Table] = {
 # What the scan writes. Nothing here touches the bet log, so a problem with the
 # Log tab's tables can never stop the board from being scored.
 SCAN_TABLES = ("runs", "observations")
-LOG_TABLES = ("bets", "notifications")
+LOG_TABLES = ("bets", "bet_legs", "notifications")
 HISTORY_TABLES = ("line_history",)
 ALERT_TABLES = ("alerts",)
 

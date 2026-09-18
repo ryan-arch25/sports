@@ -346,9 +346,57 @@ price before kickoff**, taken from the scan history in the same database, and is
 reported in points of implied probability: positive means the market moved your
 way after you bet.
 
-It all lives in the `bets` table of the SQLite database, so it belongs on the
-volume. Without one it is wiped on every redeploy along with the scan history —
-which would also take the closing lines CLV depends on.
+### Parlays
+
+The **Type** toggle switches the form to a parlay: build 2 to 10 legs, each with
+its own game, market and pick, then one combined price and one stake for the
+ticket. Legs stack in a list under the form with a remove button each, and the
+combined-price field only appears in parlay mode.
+
+A parlay is stored as one bet with child legs (`bets` plus `bet_legs`), so the
+Everyone table counts it once however many legs it has. Grade it a leg at a time
+and the ticket follows the way a sportsbook grades one: a single losing leg
+loses it immediately, an ungraded leg leaves it open, and a pushed leg **drops
+out** — its own price is divided back out of the combined price and the ticket
+pays on what is left. Dividing rather than re-multiplying the survivors is
+deliberate: it keeps whatever rounding or boost went into the price you were
+actually offered. That is why each leg's price is recorded even though you only
+type the combined one; the pick you choose supplies it.
+
+The ticket itself is not directly gradeable — the only button on it reopens the
+whole thing, which resets every leg.
+
+### Custom and alt lines
+
+**Custom line…** sits at the bottom of the Pick dropdown. It reveals a market
+(spread, total, team total, moneyline), a side and a line number, so an alt line
+the scan never priced goes in the log like any other bet: Notre Dame −23.5,
+Ohio State team total Over 49.5. The line and price on a *scanned* pick are
+editable too, because DK's alt lines sit either side of the main number and that
+is where you move to one.
+
+The side is chosen from a list rather than typed, and the list is built to match
+what the scan stores — team names for a spread or moneyline, Over/Under for a
+total, `<Team> Over` for a team total. A typo here would be invisible and would
+quietly cost the bet its closing line forever.
+
+### CLV on a number the market never closed at
+
+An alt line is a different bet from the market number, so comparing it to the
+closing price of a different number would compare two different things. When the
+logged number is not the one the scan closed on, the sharp book's closing
+probability is moved onto *your* number with the half-point table — the same
+translation the Edges tab uses — and the row is tagged **est.**
+
+It refuses rather than guesses. A team total (the game-total distribution does
+not describe one team's points) and a move wider than the table will cross
+(3 points) both show a dash instead of a number. Parlays show CLV per leg and
+none for the ticket: multiplying leg closes would invent a figure nobody could
+check.
+
+It all lives in the `bets` and `bet_legs` tables of the SQLite database, so it
+belongs on the volume. Without one it is wiped on every redeploy along with the
+scan history — which would also take the closing lines CLV depends on.
 
 ## Logging bets from the terminal
 
@@ -411,7 +459,10 @@ Everything lands in `data/cfb_edge.sqlite`:
   counts, quota remaining, and the CSV/JSON paths.
 - `observations` — one row per evaluated DK line per run, stamped with the
   snapshot's fetch time. This is the line-movement history.
-- `bets` — what you logged with `bets add`.
+- `bets` — what you logged with `bets add` or from the Log tab. A parlay is one
+  row here, with `bet_type = 'parlay'`.
+- `bet_legs` — a parlay's selections, one row each, with their own prices and
+  results. Singles keep their one selection on the `bets` row.
 - `notifications` — what the CLI has announced to Discord, so nothing repeats.
 - `alerts` — what the *dashboard* has announced, keyed by Eastern date, so a
   line is mentioned once a day however often it crosses the threshold.
@@ -782,7 +833,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-819 tests, no network access required. The odds conversion and de-vig math are
+878 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -791,7 +842,8 @@ guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging an
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
 (`test_web.py`), the Slate view's comparisons and grouping (`test_slate.py`),
-the shared bet log and its CLV (`test_betlog.py`), the schema migration against
+the shared bet log, parlay grading and translated CLV (`test_betlog.py`),
+the schema migration against
 a database from before the Log tab (`test_store.py`), best-price shopping across
 the US books (`test_shop.py`), change-only line history with its arrows and
 panel (`test_movement.py`), the dashboard's Discord alerts and their per-day

@@ -15,10 +15,12 @@ from cfb_edge.web.betlog import (
     BetLogError,
     add_bet,
     clv_points,
+    derive_ticket_result,
     list_bets,
     log_payload,
     profit,
     settle,
+    settle_leg,
     summarize,
 )
 
@@ -95,8 +97,9 @@ class TestAdding:
     @pytest.mark.parametrize("bad,message", [
         ({"person": ""}, "who placed it"),
         ({"person": "   "}, "who placed it"),
-        ({"event_id": ""}, "pick a game"),
-        ({"market": ""}, "pick a game"),
+        ({"event_id": ""}, "needs a game"),
+        ({"market": ""}, "needs a game"),
+        ({"market": "nonsense"}, "market must be one of"),
         ({"price": 0}, "American odds"),
         ({"price": "abc"}, "must be a number"),
         ({"stake": 0}, "greater than zero"),
@@ -247,3 +250,302 @@ class TestSummary:
         overall = summarize(bets)["overall"]
         assert overall["profit"] == pytest.approx(-1.0)
         assert overall["avg_clv_pct"] == pytest.approx(-0.5)
+
+
+# -- parlays ---------------------------------------------------------------
+
+
+def a_leg(**kwargs):
+    leg = dict(
+        event_id="g2michigan", market="spreads", side="Michigan Wolverines",
+        point=6.5, price=110,
+    )
+    leg.update(kwargs)
+    return leg
+
+
+def a_parlay(**kwargs):
+    payload = dict(
+        person="RS", bet_type="parlay", price=905, stake=20,
+        legs=[a_leg(), a_leg(market="h2h", side="Michigan Wolverines", point=None, price=230)],
+    )
+    payload.update(kwargs)
+    return payload
+
+
+class TestParlays:
+    def test_it_stores_one_bet_with_its_legs(self, db):
+        add_bet(db, a_parlay())
+        bets = list_bets(db)
+        assert len(bets) == 1
+        bet = bets[0]
+        assert bet["bet_type"] == "parlay"
+        assert bet["matchup"] == "2-leg parlay"
+        assert [leg["leg_no"] for leg in bet["legs"]] == [1, 2]
+        assert bet["price"] == "+905"
+
+    def test_the_everyone_table_counts_it_as_one_bet(self, db):
+        add_bet(db, a_parlay())
+        add_bet(db, a_bet())
+        assert summarize(list_bets(db))["overall"]["bets"] == 2
+
+    def test_each_leg_keeps_its_own_price_and_pick(self, db):
+        add_bet(db, a_parlay())
+        legs = list_bets(db)[0]["legs"]
+        assert legs[0]["pick"] == "Michigan Wolverines +6.5"
+        assert legs[0]["price"] == "+110"
+        assert legs[1]["pick"] == "Michigan Wolverines ML"
+
+    @pytest.mark.parametrize("count", [0, 1, 11])
+    def test_a_parlay_needs_two_to_ten_legs(self, db, count):
+        with pytest.raises(BetLogError, match="between 2 and 10"):
+            add_bet(db, a_parlay(legs=[a_leg(side=f"s{i}") for i in range(count)]))
+
+    def test_ten_legs_is_allowed(self, db):
+        add_bet(db, a_parlay(legs=[a_leg(side=f"Team {i}") for i in range(10)]))
+        assert len(list_bets(db)[0]["legs"]) == 10
+
+    def test_the_same_selection_twice_is_refused(self, db):
+        with pytest.raises(BetLogError, match="twice"):
+            add_bet(db, a_parlay(legs=[a_leg(), a_leg()]))
+
+    def test_a_leg_needs_a_price(self, db):
+        """Without it a pushed leg could not be divided back out later."""
+        with pytest.raises(BetLogError, match="leg price"):
+            add_bet(db, a_parlay(legs=[a_leg(), a_leg(market="h2h", point=None, price=None)]))
+
+    def test_legs_must_be_a_list(self, db):
+        with pytest.raises(BetLogError, match="list of legs"):
+            add_bet(db, a_parlay(legs="two"))
+
+    def test_an_unknown_bet_type_is_refused(self, db):
+        with pytest.raises(BetLogError, match="type must be one of"):
+            add_bet(db, a_bet(bet_type="teaser"))
+
+
+class TestParlaySettling:
+    def parlay(self, db, **kwargs):
+        return add_bet(db, a_parlay(**kwargs))
+
+    def test_a_ticket_starts_open(self, db):
+        self.parlay(db)
+        assert list_bets(db)[0]["result"] == OPEN
+
+    def test_one_graded_leg_leaves_it_open(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, WON)
+        bet = list_bets(db)[0]
+        assert bet["result"] == OPEN
+        assert bet["legs"][0]["result"] == WON
+
+    def test_every_leg_won_wins_the_ticket(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, WON)
+        settle_leg(db, bet_id, 2, WON)
+        bet = list_bets(db)[0]
+        assert bet["result"] == WON
+        assert bet["profit"] == pytest.approx(20 * (10.05 - 1), rel=1e-6)
+
+    def test_one_lost_leg_loses_the_ticket_immediately(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, LOST)
+        bet = list_bets(db)[0]
+        assert bet["result"] == LOST
+        assert bet["profit"] == -20
+
+    def test_a_lost_leg_beats_an_open_one(self, db):
+        """You do not wait on the rest once one has gone down."""
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 2, LOST)
+        assert list_bets(db)[0]["result"] == LOST
+
+    def test_a_pushed_leg_drops_out_and_the_payout_shrinks(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, PUSH)   # +110 leg, decimal 2.10
+        settle_leg(db, bet_id, 2, WON)
+        bet = list_bets(db)[0]
+        assert bet["result"] == WON
+        # 10.05 combined / 2.10 for the pushed leg leaves 4.7857
+        assert bet["profit"] == pytest.approx(20 * (10.05 / 2.10 - 1), rel=1e-6)
+
+    def test_every_leg_pushed_is_a_push(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, PUSH)
+        settle_leg(db, bet_id, 2, PUSH)
+        bet = list_bets(db)[0]
+        assert bet["result"] == PUSH
+        assert bet["profit"] == 0.0
+
+    def test_a_leg_can_be_reopened(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, WON)
+        settle_leg(db, bet_id, 2, WON)
+        settle_leg(db, bet_id, 2, OPEN)
+        assert list_bets(db)[0]["result"] == OPEN
+
+    def test_reopening_the_ticket_reopens_every_leg(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, WON)
+        settle_leg(db, bet_id, 2, LOST)
+        settle(db, bet_id, OPEN)
+        bet = list_bets(db)[0]
+        assert bet["result"] == OPEN
+        assert {leg["result"] for leg in bet["legs"]} == {OPEN}
+
+    def test_a_ticket_cannot_be_graded_directly(self, db):
+        bet_id = self.parlay(db)
+        with pytest.raises(BetLogError, match="one leg at a time"):
+            settle(db, bet_id, WON)
+
+    def test_a_single_has_no_legs_to_settle(self, db):
+        bet_id = add_bet(db, a_bet())
+        with pytest.raises(BetLogError, match="not a parlay"):
+            settle_leg(db, bet_id, 1, WON)
+
+    def test_an_unknown_leg_is_refused(self, db):
+        bet_id = self.parlay(db)
+        with pytest.raises(BetLogError, match="no leg 7"):
+            settle_leg(db, bet_id, 7, WON)
+
+    def test_the_ticket_carries_no_clv_of_its_own(self, db):
+        bet_id = self.parlay(db)
+        settle_leg(db, bet_id, 1, WON)
+        assert list_bets(db)[0]["clv_pct"] is None
+
+    def test_but_each_leg_does(self, db):
+        self.parlay(db)
+        assert list_bets(db)[0]["legs"][0]["clv_pct"] is not None
+
+
+class TestDeriveResult:
+    @pytest.mark.parametrize("legs,expected", [
+        ([WON, WON], WON),
+        ([WON, LOST], LOST),
+        ([LOST, OPEN], LOST),
+        ([WON, OPEN], OPEN),
+        ([PUSH, WON], WON),
+        ([PUSH, PUSH], PUSH),
+        ([PUSH, OPEN], OPEN),
+        ([], OPEN),
+    ])
+    def test_it(self, legs, expected):
+        assert derive_ticket_result(legs) == expected
+
+
+# -- custom and alt lines --------------------------------------------------
+
+
+@pytest.fixture
+def tables(cfg):
+    from cfb_edge.halfpoint import estimated_table
+
+    return [estimated_table(cfg)]
+
+
+class TestCustomLines:
+    def test_an_alt_spread_the_scan_never_priced_still_records(self, db):
+        add_bet(db, a_bet(point=9.5, price=180))
+        bet = list_bets(db)[0]
+        assert bet["pick"] == "Michigan Wolverines +9.5"
+        assert bet["price"] == "+180"
+
+    def test_a_team_total_records(self, db):
+        add_bet(db, a_bet(
+            market="team_totals", side="Michigan Wolverines Over", point=24.5, price=-115,
+        ))
+        assert list_bets(db)[0]["pick"] == "Michigan Wolverines Over 24.5"
+
+    def test_a_moneyline_needs_no_line_number(self, db):
+        add_bet(db, a_bet(market="h2h", side="Michigan Wolverines", point=None, price=230))
+        assert list_bets(db)[0]["pick"] == "Michigan Wolverines ML"
+
+    def test_a_line_on_a_moneyline_is_dropped(self, db):
+        """A number here would make the bet unfindable in the scan history."""
+        add_bet(db, a_bet(market="h2h", side="Michigan Wolverines", point=3.5, price=230))
+        assert list_bets(db)[0]["pick"] == "Michigan Wolverines ML"
+
+    def test_a_spread_without_a_line_is_refused(self, db):
+        with pytest.raises(BetLogError, match="needs a line number"):
+            add_bet(db, a_bet(point=None))
+
+    def test_a_market_outside_the_list_is_refused(self, db):
+        with pytest.raises(BetLogError, match="market must be one of"):
+            add_bet(db, a_bet(market="player_pass_yds"))
+
+
+class TestTranslatedCLV:
+    def test_the_market_number_is_not_estimated(self, db, tables):
+        add_bet(db, a_bet(point=6.5, price=110))
+        bet = list_bets(db, tables=tables)[0]
+        assert bet["clv_pct"] is not None
+        assert bet["clv_estimated"] is False
+
+    def test_an_alt_line_is_translated_and_tagged(self, db, tables):
+        """DK's +9.5 is a different bet from the +6.5 the scan closed on."""
+        add_bet(db, a_bet(point=9.5, price=180))
+        bet = list_bets(db, tables=tables)[0]
+        assert bet["clv_pct"] is not None
+        assert bet["clv_estimated"] is True
+
+    @pytest.mark.parametrize("point,better", [(9.5, True), (4.5, False)])
+    def test_the_translation_follows_the_side_of_the_number(self, db, tables, point, better):
+        """At one price, more points on your side is the better bet, and fewer
+        is the worse one. The translated close has to move that way or the sign
+        of the CLV would be telling people the opposite of the truth."""
+        add_bet(db, a_bet(point=6.5, price=110))
+        on_market = list_bets(db, tables=tables)[0]["clv_pct"]
+        add_bet(db, a_bet(point=point, price=110))
+        moved = list_bets(db, tables=tables)[0]["clv_pct"]
+        assert (moved > on_market) is better
+
+    def test_without_a_table_an_alt_line_shows_a_dash(self, db):
+        add_bet(db, a_bet(point=9.5, price=180))
+        bet = list_bets(db)[0]
+        assert bet["clv_pct"] is None
+        assert bet["closing_price"] is None
+
+    def test_a_move_past_three_points_is_not_guessed(self, db, tables):
+        add_bet(db, a_bet(point=11.5, price=260))
+        assert list_bets(db, tables=tables)[0]["clv_pct"] is None
+
+    def test_a_team_total_is_never_translated(self, db, tables):
+        """The game-total distribution does not describe one team's points."""
+        observation(
+            db, market="team_totals", side="Michigan Wolverines Over",
+            dk_point=24.5, sharp_point=24.5,
+        )
+        add_bet(db, a_bet(
+            market="team_totals", side="Michigan Wolverines Over", point=26.5, price=140,
+        ))
+        assert list_bets(db, tables=tables)[0]["clv_pct"] is None
+
+    def test_a_team_total_on_the_number_still_scores(self, db, tables):
+        observation(
+            db, market="team_totals", side="Michigan Wolverines Over",
+            dk_point=24.5, sharp_point=24.5,
+        )
+        add_bet(db, a_bet(
+            market="team_totals", side="Michigan Wolverines Over", point=24.5, price=140,
+        ))
+        assert list_bets(db, tables=tables)[0]["clv_pct"] is not None
+
+    def test_a_game_with_no_closing_line_shows_a_dash(self, db, tables):
+        add_bet(db, a_bet(event_id="never-scanned", home_team="A", away_team="B"))
+        bet = list_bets(db, tables=tables)[0]
+        assert bet["clv_pct"] is None
+        assert bet["closing_price"] is None
+
+    def test_a_parlay_leg_on_an_alt_line_is_tagged_too(self, db, tables):
+        add_bet(db, a_parlay(legs=[
+            a_leg(point=9.5, price=180),
+            a_leg(market="h2h", side="Michigan Wolverines", point=None, price=230),
+        ]))
+        legs = list_bets(db, tables=tables)[0]["legs"]
+        assert legs[0]["clv_estimated"] is True
+
+    def test_the_closing_price_is_restated_on_the_logged_number(self, db, tables):
+        """Showing the +6.5 close beside a +9.5 bet would be two different bets."""
+        add_bet(db, a_bet(point=9.5, price=180))
+        on_market = add_bet(db, a_bet(point=6.5, price=110))
+        bets = {b["bet_id"]: b for b in list_bets(db, tables=tables)}
+        assert bets[on_market]["closing_price"] != bets[on_market - 1]["closing_price"]
