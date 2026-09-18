@@ -1,0 +1,53 @@
+# cfb-edge configuration. Copy to config.toml and edit.
+
+# Bankroll used for stake sizing, in dollars.
+bankroll = 2000.0
+
+# Fraction of full Kelly to bet. 0.25 = quarter Kelly.
+kelly_fraction = 0.25
+
+# Never stake more than this percent of bankroll on one bet. Remove for no cap.
+max_bet_pct = 2.0
+
+# Default minimum edge, in percentage points. --min-edge overrides it.
+min_edge = 1.0
+
+# Markets to pull and score. --market overrides this.
+markets = ["h2h", "spreads", "totals"]
+
+# Region passed to The Odds API. The bookmakers filter below takes precedence,
+# which is what lets Pinnacle (eu) and Circa (us2) come back alongside US books.
+regions = "us"
+
+sport = "americanfootball_ncaaf"
+
+[books]
+# The book whose prices we are shopping.
+target = "draftkings"
+
+# Sharp books, in order. The first one quoting a market sets the fair price.
+sharp_priority = ["pinnacle", "circa"]
+
+# Used only when no sharp book has the market.
+consensus = ["fanduel", "betmgm", "caesars"]
+
+# How many consensus books must agree on a number before it is trusted.
+min_consensus_books = 2
+
+# The Odds API renames books occasionally; list every key that may appear.
+[books.aliases]
+draftkings = ["draftkings"]
+pinnacle = ["pinnacle"]
+circa = ["circasports", "circa"]
+fanduel = ["fanduel"]
+betmgm = ["betmgm"]
+caesars = ["williamhill_us", "caesars"]
+
+[paths]
+cache_dir = "data/cache"
+out_dir = "data/runs"
+db_path = "data/cfb_edge.sqlite"
+
+[cache]
+# Reuse a cached pull younger than this instead of spending an API request.
+max_age_minutes = 15

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfb-edge"
+version = "0.1.0"
+description = "Find +EV DraftKings college football bets against a sharp-book fair line."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.28"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+cfb-edge = "cfb_edge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cfb_edge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "-q"

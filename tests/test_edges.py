@@ -1,0 +1,185 @@
+"""Tests for DraftKings-vs-sharp edge computation."""
+
+from __future__ import annotations
+
+import pytest
+
+from cfb_edge.edges import (
+    DIFFERENT_NUMBER,
+    NO_SHARP_LINE,
+    NO_SHARP_SIDE,
+    PRICED,
+    different_number_rows,
+    evaluate_games,
+    evaluate_market,
+    format_pick,
+    rank,
+    summarize,
+)
+from cfb_edge.models import Outcome
+from cfb_edge.oddsmath import american_to_prob
+
+from conftest import make_game
+
+
+def two_book_game(dk, sharp, market="totals"):
+    return make_game({"draftkings": {market: dk}, "pinnacle": {market: sharp}})
+
+
+class TestMatchingNumbers:
+    def test_edge_is_fair_minus_dk_implied(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        over = next(r for r in evaluate_market(game, "totals", cfg) if r.side == "Over")
+        assert over.status == PRICED
+        assert over.fair_prob == pytest.approx(0.5)
+        assert over.dk_prob == pytest.approx(american_to_prob(110))
+        assert over.edge == pytest.approx(0.5 - 100 / 210)
+        assert over.edge_pct == pytest.approx(2.381, abs=1e-3)
+
+    def test_ev_and_stake_come_from_the_fair_probability(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        over = next(r for r in evaluate_market(game, "totals", cfg) if r.side == "Over")
+        assert over.ev_per_100 == pytest.approx(5.0, abs=1e-9)
+        # Quarter Kelly on a 2.38% edge at +110 with a $10k bankroll.
+        assert over.stake == pytest.approx(10_000 * 0.25 * (0.5 * 2.1 - 1) / 1.1, abs=1e-6)
+
+    def test_fair_american_is_reported(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        over = next(r for r in evaluate_market(game, "totals", cfg) if r.side == "Over")
+        assert over.fair_american == pytest.approx(100.0)
+
+    def test_the_juiced_side_shows_a_negative_edge(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        under = next(r for r in evaluate_market(game, "totals", cfg) if r.side == "Under")
+        assert under.status == PRICED
+        assert under.edge < 0
+        assert under.stake == 0.0
+
+    def test_moneylines_always_match_on_number(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Away Team", 145), Outcome("Home Team", -175)]},
+            "pinnacle": {"h2h": [Outcome("Away Team", 130), Outcome("Home Team", -145)]},
+        })
+        rows = evaluate_market(game, "h2h", cfg)
+        assert {r.status for r in rows} == {PRICED}
+        away = next(r for r in rows if r.side == "Away Team")
+        assert away.edge_pct == pytest.approx(1.53, abs=1e-2)
+
+    def test_spread_sides_match_on_their_own_number(self, cfg):
+        game = two_book_game(
+            market="spreads",
+            dk=[Outcome("Home Team", -125, -3.5), Outcome("Away Team", 105, 3.5)],
+            sharp=[Outcome("Home Team", -105, -3.5), Outcome("Away Team", -105, 3.5)],
+        )
+        rows = evaluate_market(game, "spreads", cfg)
+        assert {r.status for r in rows} == {PRICED}
+        assert next(r for r in rows if r.side == "Away Team").edge_pct == pytest.approx(1.22, abs=1e-2)
+
+
+class TestDifferentNumber:
+    def test_total_off_the_sharp_number_is_flagged_not_priced(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = evaluate_market(game, "totals", cfg)
+        assert {r.status for r in rows} == {DIFFERENT_NUMBER}
+        under = next(r for r in rows if r.side == "Under")
+        assert under.dk_point == 51.5
+        assert under.sharp_point == 53.0
+        assert under.edge is None and under.ev_per_100 is None and under.stake is None
+        assert "51.5" in under.note and "53" in under.note
+
+    def test_half_point_difference_on_a_spread_is_flagged(self, cfg):
+        game = two_book_game(
+            market="spreads",
+            dk=[Outcome("Home Team", -110, -3.0), Outcome("Away Team", -110, 3.0)],
+            sharp=[Outcome("Home Team", -110, -3.5), Outcome("Away Team", -110, 3.5)],
+        )
+        assert {r.status for r in evaluate_market(game, "spreads", cfg)} == {DIFFERENT_NUMBER}
+
+    def test_flagged_rows_are_excluded_from_the_ranking(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 200, 51.5), Outcome("Under", -250, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = evaluate_market(game, "totals", cfg)
+        assert rank(rows, 1.0) == []
+        assert len(different_number_rows(rows)) == 2
+
+
+class TestMissingData:
+    def test_no_sharp_line_is_recorded_not_dropped(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Home Team", -320), Outcome("Away Team", 260)]},
+            "fanduel": {"h2h": [Outcome("Home Team", -310), Outcome("Away Team", 250)]},
+        })
+        rows = evaluate_market(game, "h2h", cfg)
+        assert {r.status for r in rows} == {NO_SHARP_LINE}
+        assert all(r.edge is None for r in rows)
+
+    def test_no_draftkings_price_means_no_rows(self, cfg):
+        game = make_game({
+            "pinnacle": {"h2h": [Outcome("Home Team", -145), Outcome("Away Team", 130)]},
+        })
+        assert evaluate_market(game, "h2h", cfg) == []
+
+    def test_team_naming_mismatch_is_reported(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Home Team", -175), Outcome("Away Team", 145)]},
+            "pinnacle": {"h2h": [Outcome("Home Squad", -145), Outcome("Away Squad", 130)]},
+        })
+        assert {r.status for r in evaluate_market(game, "h2h", cfg)} == {NO_SHARP_SIDE}
+
+
+class TestRanking:
+    def test_sorted_by_edge_descending_and_filtered(self, sample_games, cfg):
+        rows = evaluate_games(sample_games, cfg, ("h2h", "spreads", "totals"))
+        bets = rank(rows, 1.0)
+        assert [b.edge_pct for b in bets] == sorted((b.edge_pct for b in bets), reverse=True)
+        assert all(b.edge_pct >= 1.0 for b in bets)
+        assert bets[0].side == "Michigan Wolverines"
+        assert bets[0].edge_pct == pytest.approx(2.38, abs=1e-2)
+
+    def test_min_edge_threshold_is_applied(self, sample_games, cfg):
+        rows = evaluate_games(sample_games, cfg, ("h2h", "spreads", "totals"))
+        assert len(rank(rows, 0.0)) > len(rank(rows, 1.0)) > len(rank(rows, 2.5))
+
+    def test_market_filter_limits_the_rows(self, sample_games, cfg):
+        rows = evaluate_games(sample_games, cfg, ("totals",))
+        assert {r.market for r in rows} == {"totals"}
+
+    def test_summary_counts_every_evaluated_line(self, sample_games, cfg):
+        rows = evaluate_games(sample_games, cfg, ("h2h", "spreads", "totals"))
+        counts = summarize(rows)
+        assert counts[PRICED] == 16
+        assert counts[DIFFERENT_NUMBER] == 2
+        assert counts[NO_SHARP_LINE] == 2
+        assert sum(counts.values()) == len(rows)
+
+
+class TestPickLabels:
+    @pytest.mark.parametrize(
+        "market,side,point,expected",
+        [
+            ("h2h", "Georgia Bulldogs", None, "Georgia Bulldogs ML"),
+            ("spreads", "Georgia Bulldogs", 3.5, "Georgia Bulldogs +3.5"),
+            ("spreads", "Alabama Crimson Tide", -3.5, "Alabama Crimson Tide -3.5"),
+            ("totals", "Under", 51.5, "Under 51.5"),
+            ("totals", "Over", 44.0, "Over 44"),
+        ],
+    )
+    def test_format_pick(self, market, side, point, expected):
+        assert format_pick(market, side, point) == expected

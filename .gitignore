@@ -1,0 +1,18 @@
+# secrets and local config
+.env
+config.toml
+
+# run artifacts
+data/
+*.sqlite
+*.sqlite-journal
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/

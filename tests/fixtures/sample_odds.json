@@ -1,0 +1,584 @@
+{
+  "fetched_at": "2026-09-18T14:05:00Z",
+  "sport": "americanfootball_ncaaf",
+  "params": {
+    "regions": "us",
+    "markets": "h2h,spreads,totals",
+    "oddsFormat": "american",
+    "dateFormat": "iso",
+    "bookmakers": "draftkings,pinnacle,circasports,circa,fanduel,betmgm,williamhill_us,caesars"
+  },
+  "quota": {
+    "remaining": "487",
+    "used": "13",
+    "last_cost": "3"
+  },
+  "data": [
+    {
+      "id": "g1alabama",
+      "sport_key": "americanfootball_ncaaf",
+      "sport_title": "NCAAF",
+      "commence_time": "2026-09-20T23:30:00Z",
+      "home_team": "Alabama Crimson Tide",
+      "away_team": "Georgia Bulldogs",
+      "bookmakers": [
+        {
+          "key": "pinnacle",
+          "title": "Pinnacle",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Alabama Crimson Tide",
+                  "price": -145
+                },
+                {
+                  "name": "Georgia Bulldogs",
+                  "price": 130
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Alabama Crimson Tide",
+                  "price": -105,
+                  "point": -3.5
+                },
+                {
+                  "name": "Georgia Bulldogs",
+                  "price": -105,
+                  "point": 3.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -105,
+                  "point": 53.0
+                },
+                {
+                  "name": "Under",
+                  "price": -105,
+                  "point": 53.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "draftkings",
+          "title": "DraftKings",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Alabama Crimson Tide",
+                  "price": -175
+                },
+                {
+                  "name": "Georgia Bulldogs",
+                  "price": 145
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Alabama Crimson Tide",
+                  "price": -125,
+                  "point": -3.5
+                },
+                {
+                  "name": "Georgia Bulldogs",
+                  "price": 105,
+                  "point": 3.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 51.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 51.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "fanduel",
+          "title": "FanDuel",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Alabama Crimson Tide",
+                  "price": -150
+                },
+                {
+                  "name": "Georgia Bulldogs",
+                  "price": 128
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 52.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 52.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "g2michigan",
+      "sport_key": "americanfootball_ncaaf",
+      "sport_title": "NCAAF",
+      "commence_time": "2026-09-20T16:00:00Z",
+      "home_team": "Michigan Wolverines",
+      "away_team": "Ohio State Buckeyes",
+      "bookmakers": [
+        {
+          "key": "circasports",
+          "title": "Circa Sports",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Ohio State Buckeyes",
+                  "price": -260
+                },
+                {
+                  "name": "Michigan Wolverines",
+                  "price": 215
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Ohio State Buckeyes",
+                  "price": -110,
+                  "point": -6.5
+                },
+                {
+                  "name": "Michigan Wolverines",
+                  "price": -110,
+                  "point": 6.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 47.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 47.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "draftkings",
+          "title": "DraftKings",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Ohio State Buckeyes",
+                  "price": -250
+                },
+                {
+                  "name": "Michigan Wolverines",
+                  "price": 230
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Ohio State Buckeyes",
+                  "price": -130,
+                  "point": -6.5
+                },
+                {
+                  "name": "Michigan Wolverines",
+                  "price": 110,
+                  "point": 6.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -105,
+                  "point": 47.5
+                },
+                {
+                  "name": "Under",
+                  "price": -115,
+                  "point": 47.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "betmgm",
+          "title": "BetMGM",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Ohio State Buckeyes",
+                  "price": -115,
+                  "point": -6.5
+                },
+                {
+                  "name": "Michigan Wolverines",
+                  "price": -105,
+                  "point": 6.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "g3texas",
+      "sport_key": "americanfootball_ncaaf",
+      "sport_title": "NCAAF",
+      "commence_time": "2026-09-21T00:00:00Z",
+      "home_team": "Oklahoma Sooners",
+      "away_team": "Texas Longhorns",
+      "bookmakers": [
+        {
+          "key": "draftkings",
+          "title": "DraftKings",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -170
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": 155
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -110,
+                  "point": -4.5
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": -110,
+                  "point": 4.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": 110,
+                  "point": 44.5
+                },
+                {
+                  "name": "Under",
+                  "price": -130,
+                  "point": 44.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "fanduel",
+          "title": "FanDuel",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -180
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": 155
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -110,
+                  "point": -4.5
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": -110,
+                  "point": 4.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 44.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 44.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "betmgm",
+          "title": "BetMGM",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -175
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": 150
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -112,
+                  "point": -4.5
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": -108,
+                  "point": 4.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -108,
+                  "point": 44.5
+                },
+                {
+                  "name": "Under",
+                  "price": -112,
+                  "point": 44.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "williamhill_us",
+          "title": "Caesars",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -185
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": 160
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Texas Longhorns",
+                  "price": -115,
+                  "point": -4.5
+                },
+                {
+                  "name": "Oklahoma Sooners",
+                  "price": -105,
+                  "point": 4.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 45.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 45.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "g4boise",
+      "sport_key": "americanfootball_ncaaf",
+      "sport_title": "NCAAF",
+      "commence_time": "2026-09-20T19:30:00Z",
+      "home_team": "Boise State Broncos",
+      "away_team": "Fresno State Bulldogs",
+      "bookmakers": [
+        {
+          "key": "draftkings",
+          "title": "DraftKings",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Boise State Broncos",
+                  "price": -320
+                },
+                {
+                  "name": "Fresno State Bulldogs",
+                  "price": 260
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "fanduel",
+          "title": "FanDuel",
+          "last_update": "2026-09-18T14:04:11Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2026-09-18T14:04:11Z",
+              "outcomes": [
+                {
+                  "name": "Boise State Broncos",
+                  "price": -310
+                },
+                {
+                  "name": "Fresno State Bulldogs",
+                  "price": 250
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
