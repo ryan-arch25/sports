@@ -476,3 +476,70 @@ class TestServeCommand:
         monkeypatch.setattr("uvicorn.run", lambda app, **kwargs: None)
         assert cli.main(["serve"]) == 0
         assert "DASHBOARD_PASSWORD is not set" in capsys.readouterr().err
+
+
+class TestDataDirectories:
+    def test_creates_what_the_scan_writes_to(self, tmp_path):
+        from cfb_edge.web.app import ensure_data_dirs
+
+        cfg = apply_env_overrides(Config(), {"DATA_DIR": str(tmp_path / "vol")})
+        assert ensure_data_dirs(cfg) == []
+        assert cfg.cache_dir.is_dir()
+        assert cfg.out_dir.is_dir()
+        assert cfg.db_path.parent.is_dir()
+
+    def test_is_idempotent_and_keeps_what_is_there(self, tmp_path):
+        from cfb_edge.web.app import ensure_data_dirs
+
+        cfg = apply_env_overrides(Config(), {"DATA_DIR": str(tmp_path / "vol")})
+        ensure_data_dirs(cfg)
+        (cfg.cache_dir / "odds.json").write_text("{}", encoding="utf-8")
+        assert ensure_data_dirs(cfg) == []
+        assert (cfg.cache_dir / "odds.json").exists()
+
+    def test_reports_a_directory_it_cannot_create(self, tmp_path, monkeypatch):
+        from cfb_edge.web.app import ensure_data_dirs
+
+        def refuse(self, *args, **kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        cfg = apply_env_overrides(Config(), {"DATA_DIR": str(tmp_path / "vol")})
+        monkeypatch.setattr(Path, "mkdir", refuse)
+        problems = ensure_data_dirs(cfg)
+        assert len(problems) == 3
+        assert all("could not create" in p for p in problems)
+
+    def test_reports_a_directory_it_cannot_write_to(self, tmp_path, monkeypatch):
+        """The volume exists but is still owned by root."""
+        from cfb_edge.web.app import ensure_data_dirs
+
+        cfg = apply_env_overrides(Config(), {"DATA_DIR": str(tmp_path / "vol")})
+        ensure_data_dirs(cfg)
+        monkeypatch.setattr("cfb_edge.web.app.os.access", lambda path, mode: False)
+        problems = ensure_data_dirs(cfg)
+        assert problems and all("is not writable by uid" in p for p in problems)
+
+    def test_startup_records_the_problems(self, web_cfg, dashboard, monkeypatch, caplog):
+        monkeypatch.setattr(
+            "cfb_edge.web.app.ensure_data_dirs", lambda cfg: ["/data is not writable by uid 10001"]
+        )
+        app = create_app(cfg=web_cfg, auth=Auth(password=PASSWORD), dashboard=dashboard,
+                         start_scheduler=False)
+        with caplog.at_level("ERROR"), TestClient(app) as client:
+            body = client.get("/healthz").json()
+        assert body["data_dir_problems"] == ["/data is not writable by uid 10001"]
+        assert "mounted volume" in caplog.text
+
+    def test_health_reports_a_clean_data_directory(self, client, web_cfg):
+        body = client.get("/healthz").json()
+        assert body["data_dir_problems"] == []
+        assert body["data_dir"] == str(web_cfg.db_path.parent)
+
+    def test_startup_creates_the_directories_for_real(self, tmp_path, dashboard):
+        cfg = apply_env_overrides(Config(), {"DATA_DIR": str(tmp_path / "vol")})
+        app = create_app(cfg=cfg, auth=Auth(password=PASSWORD), dashboard=dashboard,
+                         start_scheduler=False)
+        with TestClient(app):
+            pass
+        assert (tmp_path / "vol" / "cache").is_dir()
+        assert (tmp_path / "vol" / "runs").is_dir()

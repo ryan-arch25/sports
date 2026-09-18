@@ -32,6 +32,30 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def ensure_data_dirs(cfg: Config) -> list[str]:
+    """Create the directories a scan writes to, and report any it cannot use.
+
+    The container entrypoint normally does this before dropping privileges, but
+    a bare `uvicorn` run, a changed DATA_DIR or a volume attached after the
+    fact can all leave them missing. Creating them here means the first scan
+    does not fail on a missing directory, and an unwritable one is reported at
+    startup instead of showing up as a PermissionError half an hour later.
+    """
+    problems: list[str] = []
+    # dict.fromkeys keeps the order and drops duplicates (out_dir and the
+    # database often share a parent).
+    for path in dict.fromkeys([cfg.cache_dir, cfg.out_dir, cfg.db_path.parent]):
+        if not path.is_dir():
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                problems.append(f"could not create {path}: {exc}")
+                continue
+        if not os.access(path, os.W_OK):
+            problems.append(f"{path} is not writable by uid {os.geteuid()}")
+    return problems
+
+
 def build_config(env: dict[str, str] | None = None) -> Config:
     """Config file if there is one, then environment overrides.
 
@@ -113,6 +137,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        app.state.data_dir_problems = ensure_data_dirs(cfg)
+        for problem in app.state.data_dir_problems:
+            log.error(
+                "cannot write to %s. If this is a mounted volume, it is probably "
+                "owned by root: the container entrypoint fixes that when it starts "
+                "as root, so check that nothing overrode the image's USER.",
+                problem,
+            )
         if start_scheduler and auth.configured:
             await dashboard.start()
         elif not auth.configured:
@@ -136,6 +168,7 @@ def create_app(
     app.state.cfg = cfg
     app.state.auth = auth
     app.state.dashboard = dashboard
+    app.state.data_dir_problems = []
 
     def client_key(request: Request) -> str:
         """Identify the caller for the login throttle, behind Railway's proxy."""
@@ -190,6 +223,8 @@ def create_app(
             "scan_ready": state.ready,
             "last_updated": state.updated_at_utc,
             "last_error": state.error,
+            "data_dir": str(cfg.db_path.parent),
+            "data_dir_problems": list(getattr(app.state, "data_dir_problems", [])),
         })
 
     @app.get("/", response_class=HTMLResponse)

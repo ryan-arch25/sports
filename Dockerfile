@@ -5,7 +5,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DATA_DIR=/app/data
+    DATA_DIR=/app/data \
+    APP_USER=cfbedge
 
 WORKDIR /app
 
@@ -17,13 +18,19 @@ COPY pyproject.toml README.md ./
 COPY cfb_edge ./cfb_edge
 RUN pip install --no-cache-dir --no-deps .
 
-# Run as a non-root user that owns the writable data directory.
+# The application user. It owns /app, but not necessarily a volume mounted
+# over DATA_DIR at run time -- that is the entrypoint's job.
 RUN useradd --create-home --uid 10001 cfbedge \
-    && mkdir -p /app/data \
+    && mkdir -p "$DATA_DIR" \
     && chown -R cfbedge:cfbedge /app
-USER cfbedge
 
 EXPOSE 8000
+
+# No USER line on purpose: the container starts as root so the entrypoint can
+# take ownership of a freshly mounted volume (Railway mounts them owned by
+# root), and then execs the command below as $APP_USER. The app itself never
+# runs with privilege.
+ENTRYPOINT ["python", "-m", "cfb_edge.entrypoint"]
 
 # Railway injects PORT; the default keeps `docker run -p 8000:8000` working.
 CMD ["sh", "-c", "exec uvicorn cfb_edge.web.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]

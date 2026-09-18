@@ -444,16 +444,44 @@ configuration:
    | `MARKETS` | no | e.g. `spreads,totals` |
    | `DASHBOARD_REFRESH_MINUTES` | no | Default 30 |
    | `DASHBOARD_TITLE` | no | Page title |
-   | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data` |
+   | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data`. Set it to your volume's mount path |
+   | `APP_USER` | no | User the entrypoint drops to, default `cfbedge` |
 
    `config.toml` is gitignored, so it is not in the image — on Railway these
    variables are how you configure it. Railway sets `PORT` itself.
 3. Generate a domain and open it.
 
-Two things worth knowing about the deployment. Railway's filesystem is
-ephemeral, so the odds cache and the SQLite run log are lost on redeploy unless
-you attach a volume and point `DATA_DIR` at its mount path. And keep
-`numReplicas = 1`: each replica runs its own scan schedule, so two replicas
+### Volumes, and why the container starts as root
+
+Railway's filesystem is ephemeral, so the odds cache and the SQLite run log are
+lost on redeploy unless you attach a volume. Add one, then set `DATA_DIR` to the
+same path you mounted it at (`/data` if you mounted at `/data`).
+
+A mounted volume arrives owned by `root`, which an unprivileged process cannot
+write to — that is a `PermissionError: [Errno 13] Permission denied: '/data'` on
+the first scan. So the image has no `USER` line. It starts as root, and
+`ENTRYPOINT` runs `python -m cfb_edge.entrypoint`, which:
+
+1. creates `DATA_DIR` and its `cache/` and `runs/` subdirectories,
+2. hands them to `$APP_USER` (`cfbedge`, uid 10001), skipping anything already
+   owned by that user so a restart with a big cache is not a long chown,
+3. drops to that user for good, and
+4. `exec`s the real command, so it still runs as PID 1 and gets signals directly.
+
+Only those few lines ever hold privilege; the app itself runs unprivileged. If
+you start the container with an explicit `--user`, the entrypoint leaves the
+volume alone and that user has to be able to write to it already.
+
+The app also creates its directories on startup, and `/healthz` reports anything
+it cannot write:
+
+```json
+{"ok": true, "data_dir": "/data", "data_dir_problems": ["/data is not writable by uid 10001"]}
+```
+
+An empty `data_dir_problems` means the volume is set up correctly.
+
+Keep `numReplicas = 1`: each replica runs its own scan schedule, so two replicas
 means two sets of API requests against one quota.
 
 Locally the same image runs with:
@@ -465,6 +493,9 @@ docker run --rm -p 8000:8000 \
   -v "$PWD/data:/app/data" cfb-edge
 ```
 
+The bind mount is owned by whoever ran `docker run`; the entrypoint takes care
+of it the same way.
+
 ## Tests
 
 ```bash
@@ -472,7 +503,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-450 tests, no network access required. The odds conversion and de-vig math are
+476 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
@@ -480,7 +511,8 @@ half-point-translation handling (`test_edges.py`), the half-point model itself
 guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging and
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
 caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
-(`test_web.py`), and the CLI end to end against a sample board in
+(`test_web.py`), the container entrypoint that prepares a mounted volume
+(`test_entrypoint.py`), and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).
 
 Network-facing code is tested against stubs. `tests/synthetic.py` generates

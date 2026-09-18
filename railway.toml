@@ -6,6 +6,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# If you attach a volume, set DATA_DIR to the same mount path. The image's
+# entrypoint starts as root, takes ownership of that path for the app user and
+# then drops privileges, so a root-owned mount is not a problem.
 healthcheckPath = "/healthz"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
