@@ -252,6 +252,22 @@ def _threshold(kind: str, role: str, point: float) -> float:
     return point
 
 
+def line_diff(
+    role: str, sharp_point: float | None, dk_point: float | None
+) -> float | None:
+    """Points in the bettor's favour: how much better DK's number is.
+
+    Positive means DK's number helps this side, negative means it hurts. Both
+    sides of a spread want a bigger number; an Over wants a lower total and an
+    Under a higher one, which is the only case that flips.
+    """
+    if sharp_point is None or dk_point is None:
+        return None
+    if role == OVER:
+        return float(sharp_point) - float(dk_point)
+    return float(dk_point) - float(sharp_point)
+
+
 def market_kind(market: str) -> str | None:
     if market in SPREAD_LIKE:
         return SPREAD

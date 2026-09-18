@@ -74,6 +74,25 @@ class EdgeRow:
     def edge_pct(self) -> float | None:
         return None if self.edge is None else self.edge * 100.0
 
+    @property
+    def line_diff(self) -> float | None:
+        """How much better DK's number is than the sharp book's, for this side.
+
+        Positive means DK's number helps the pick, negative means it hurts,
+        None when there is no number to compare. Units are the market's own, so
+        a passing-yards prop reads in yards rather than points.
+        """
+        from cfb_edge.halfpoint import TOTAL, line_diff, market_kind, side_role
+
+        if self.market == "h2h":
+            return None
+        # Markets the half-point table does not price -- props, team totals --
+        # are still Over/Under markets whose number is worth comparing.
+        role = side_role(market_kind(self.market) or TOTAL, self.side, self.sharp_point)
+        if role is None:
+            return None
+        return line_diff(role, self.sharp_point, self.dk_point)
+
     def as_dict(self) -> dict:
         data = asdict(self)
         data["commence_time"] = self.commence_time.isoformat().replace("+00:00", "Z")
@@ -81,6 +100,7 @@ class EdgeRow:
         data["pick"] = self.pick
         data["market_label"] = self.market_label
         data["edge_pct"] = self.edge_pct
+        data["line_diff"] = self.line_diff
         return data
 
 

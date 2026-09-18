@@ -53,6 +53,7 @@ def serialize_row(row: EdgeRow) -> dict[str, Any]:
         "sharp_price": format_american(row.sharp_price),
         "sharp_source": row.sharp_source,
         "sharp_point": row.sharp_point,
+        "line_diff": row.line_diff,
         "fair_pct": None if row.fair_prob is None else round(row.fair_prob * 100, 1),
         "dk_pct": None if row.dk_prob is None else round(row.dk_prob * 100, 1),
         "edge_pct": None if row.edge_pct is None else round(row.edge_pct, 2),

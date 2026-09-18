@@ -280,3 +280,72 @@ class TestTranslatedNumbers:
         assert {r.status for r in evaluate_market(game, "totals", cfg, None)} == {
             DIFFERENT_NUMBER
         }
+
+
+class TestLineDiffOnRows:
+    def test_a_moved_total_reports_the_difference_on_both_sides(self, cfg, halfpoint_table):
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = {r.side: r for r in evaluate_market(game, "totals", cfg, halfpoint_table)}
+        assert rows["Over"].line_diff == pytest.approx(1.5)   # DK's 51.5 helps the Over
+        assert rows["Under"].line_diff == pytest.approx(-1.5)  # and hurts the Under
+
+    def test_a_moved_spread_reports_the_difference(self, cfg, halfpoint_table):
+        game = two_book_game(
+            market="spreads",
+            dk=[Outcome("Home Team", -110, -2.5), Outcome("Away Team", -110, 2.5)],
+            sharp=[Outcome("Home Team", -110, -3.0), Outcome("Away Team", -110, 3.0)],
+        )
+        rows = {r.side: r for r in evaluate_market(game, "spreads", cfg, halfpoint_table)}
+        assert rows["Home Team"].line_diff == pytest.approx(0.5)
+        assert rows["Away Team"].line_diff == pytest.approx(-0.5)
+
+    def test_the_same_number_is_a_zero_difference(self, cfg):
+        game = two_book_game(
+            dk=[Outcome("Over", 110, 44.5), Outcome("Under", -130, 44.5)],
+            sharp=[Outcome("Over", -110, 44.5), Outcome("Under", -110, 44.5)],
+        )
+        assert all(r.line_diff == 0 for r in evaluate_market(game, "totals", cfg))
+
+    def test_a_moneyline_has_no_number_to_compare(self, cfg):
+        game = make_game({
+            "draftkings": {"h2h": [Outcome("Away Team", 145), Outcome("Home Team", -175)]},
+            "pinnacle": {"h2h": [Outcome("Away Team", 130), Outcome("Home Team", -145)]},
+        })
+        assert all(r.line_diff is None for r in evaluate_market(game, "h2h", cfg))
+
+    def test_a_flagged_row_still_reports_the_difference(self, cfg, halfpoint_table):
+        """Too far to price is not too far to describe."""
+        game = two_book_game(
+            dk=[Outcome("Over", -110, 44.0), Outcome("Under", -110, 44.0)],
+            sharp=[Outcome("Over", -105, 53.0), Outcome("Under", -105, 53.0)],
+        )
+        rows = {r.side: r for r in evaluate_market(game, "totals", cfg, halfpoint_table)}
+        assert rows["Over"].status == DIFFERENT_NUMBER
+        assert rows["Over"].line_diff == pytest.approx(9.0)
+
+    def test_no_sharp_side_means_no_difference(self, cfg):
+        game = make_game({
+            "draftkings": {"totals": [Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)]},
+            "fanduel": {"totals": [Outcome("Over", -110, 51.5), Outcome("Under", -110, 51.5)]},
+        })
+        rows = evaluate_market(game, "totals", cfg)
+        assert {r.status for r in rows} == {NO_SHARP_LINE}
+        assert all(r.line_diff is None for r in rows)
+
+    def test_a_prop_reports_its_difference_in_its_own_units(self, cfg):
+        """The table will not price a prop, but the number gap is still visible."""
+        game = make_game({
+            "draftkings": {"player_pass_yds": [
+                Outcome("Over", -110, 249.5, "QB One"), Outcome("Under", -110, 249.5, "QB One"),
+            ]},
+            "pinnacle": {"player_pass_yds": [
+                Outcome("Over", -105, 251.5, "QB One"), Outcome("Under", -105, 251.5, "QB One"),
+            ]},
+        })
+        rows = {r.side: r for r in evaluate_market(game, "player_pass_yds", cfg)}
+        # 249.5 yards instead of 251.5 is two yards in the Over's favour.
+        assert rows["QB One Over"].line_diff == pytest.approx(2.0)
+        assert rows["QB One Under"].line_diff == pytest.approx(-2.0)

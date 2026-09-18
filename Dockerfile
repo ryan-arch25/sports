@@ -14,7 +14,10 @@ WORKDIR /app
 COPY requirements.txt requirements-web.txt ./
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-COPY pyproject.toml README.md ./
+# halfpoint.jso[n] is an optional committed half-point table. The bracket makes
+# the pattern match nothing when the file is absent, and README.md alongside it
+# guarantees the COPY always has at least one source.
+COPY pyproject.toml README.md halfpoint.jso[n] ./
 COPY cfb_edge ./cfb_edge
 RUN pip install --no-cache-dir --no-deps .
 

@@ -21,8 +21,8 @@ CSV_COLUMNS = [
     "run_id", "fetched_at", "event_id", "commence_time_utc", "kickoff_et", "matchup",
     "away_team", "home_team", "market", "market_label", "side", "pick", "dk_point",
     "dk_price", "dk_prob", "sharp_source", "sharp_books", "sharp_point", "sharp_price",
-    "sharp_hold", "fair_prob", "fair_american", "edge_pct", "ev_per_100", "stake",
-    "status", "above_min_edge", "translated_from", "note",
+    "sharp_hold", "line_diff", "fair_prob", "fair_american", "edge_pct", "ev_per_100",
+    "stake", "status", "above_min_edge", "translated_from", "note",
 ]
 
 STATUS_ORDER = {PRICED: 0, TRANSLATED: 1, DIFFERENT_NUMBER: 2}
@@ -43,6 +43,13 @@ def _money(value: float | None) -> str:
         return "-"
     sign = "+" if value > 0 else ""
     return f"{sign}{value:,.2f}"
+
+
+def _line_diff(value: float | None, color: bool = False) -> str:
+    """How much better DK's number is, in points. A dash means the same number."""
+    if value is None or value == 0:
+        return "-"
+    return _colorize(f"{value:+g}", "green" if value > 0 else "red", color)
 
 
 def _truncate(text: str, width: int) -> str:
@@ -100,9 +107,9 @@ def _sharp_cell(row: EdgeRow) -> str:
 def edge_table(rows: Sequence[EdgeRow], color: bool = False, game_width: int = 32) -> str:
     headers = [
         Column("GAME"), Column("KICKOFF (ET)"), Column("MARKET"), Column("PICK"),
-        Column("DK", "right"), Column("SHARP", "right"), Column("FAIR%", "right"),
-        Column("DK%", "right"), Column("EDGE", "right"), Column("EV/$100", "right"),
-        Column("STAKE", "right"),
+        Column("DK", "right"), Column("SHARP", "right"), Column("LINE DIFF", "right"),
+        Column("FAIR%", "right"), Column("DK%", "right"), Column("EDGE", "right"),
+        Column("EV/$100", "right"), Column("STAKE", "right"),
     ]
     body = []
     for row in rows:
@@ -114,6 +121,7 @@ def edge_table(rows: Sequence[EdgeRow], color: bool = False, game_width: int = 3
             _truncate(row.pick, 26),
             format_american(row.dk_price),
             _sharp_cell(row),
+            _line_diff(row.line_diff, color),
             _pct(row.fair_prob),
             _pct(row.dk_prob),
             _colorize(edge_text, "green", color),
@@ -127,6 +135,7 @@ def different_number_table(rows: Sequence[EdgeRow], color: bool = False, game_wi
     headers = [
         Column("GAME"), Column("KICKOFF (ET)"), Column("MARKET"), Column("DK LINE"),
         Column("DK", "right"), Column("SHARP LINE"), Column("SHARP", "right"),
+        Column("LINE DIFF", "right"),
     ]
     body = []
     for row in rows:
@@ -138,6 +147,7 @@ def different_number_table(rows: Sequence[EdgeRow], color: bool = False, game_wi
             format_american(row.dk_price),
             _truncate(format_pick(row.market, row.side, row.sharp_point), 26),
             f"{format_american(row.sharp_price)} ({row.sharp_source})",
+            _line_diff(row.line_diff, color),
         ])
     return render_table(headers, body)
 
@@ -207,8 +217,8 @@ def change_table(changes: Sequence[Any], color: bool = False, game_width: int = 
     headers = [
         Column("CHANGE"), Column("GAME"), Column("KICKOFF (ET)"), Column("MARKET"),
         Column("PICK"), Column("DK", "right"), Column("SHARP", "right"),
-        Column("FAIR%", "right"), Column("EDGE", "right"), Column("EV/$100", "right"),
-        Column("STAKE", "right"),
+        Column("LINE DIFF", "right"), Column("FAIR%", "right"), Column("EDGE", "right"),
+        Column("EV/$100", "right"), Column("STAKE", "right"),
     ]
     tint = {"new": "green", "dropped": "dim", "number": "yellow"}
     body = []
@@ -222,6 +232,7 @@ def change_table(changes: Sequence[Any], color: bool = False, game_width: int = 
             _truncate(row.pick, 24),
             format_american(row.dk_price),
             _sharp_cell(row),
+            _line_diff(row.line_diff, color),
             _pct(row.fair_prob),
             _pct(row.edge),
             _money(row.ev_per_100),

@@ -543,3 +543,37 @@ class TestDataDirectories:
             pass
         assert (tmp_path / "vol" / "cache").is_dir()
         assert (tmp_path / "vol" / "runs").is_dir()
+
+
+class TestLineDiffInTheDashboard:
+    def test_rows_carry_the_difference(self, loaded):
+        rows = loaded.get("/api/state").json()["rows"]
+        assert all("line_diff" in row for row in rows)
+
+    def test_same_number_rows_report_zero(self, loaded):
+        rows = loaded.get("/api/state").json()["rows"]
+        spread = next(r for r in rows if r["pick"] == "Michigan Wolverines +6.5")
+        assert spread["line_diff"] == 0
+
+    def test_a_moneyline_has_nothing_to_compare(self, loaded):
+        rows = loaded.get("/api/state").json()["rows"]
+        moneyline = next(r for r in rows if r["market"] == "h2h")
+        assert moneyline["line_diff"] is None
+
+    def test_a_moved_number_reports_both_directions(self, web_cfg, halfpoint_table, tmp_path):
+        import asyncio
+
+        from cfb_edge.halfpoint import save_table
+
+        web_cfg.halfpoint_table_path = save_table(halfpoint_table, tmp_path / "hp.json")
+        dash = make_dashboard(web_cfg)
+        asyncio.run(dash.refresh())
+        by_pick = {row["pick"]: row for row in dash.state.rows}
+        assert by_pick["Over 51.5"]["line_diff"] == pytest.approx(1.5)
+        assert by_pick["Over 51.5"]["translated"] is True
+
+    def test_the_page_has_the_column(self, signed_in):
+        body = signed_in.get("/").text
+        assert "Line" in body
+        assert 'class="num better"' in body or "better" in body
+        assert "line_diff" in body  # the renderer reads it

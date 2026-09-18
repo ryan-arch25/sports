@@ -6,6 +6,7 @@ import pytest
 
 from cfb_edge.halfpoint import (
     FAVORITE,
+    line_diff,
     OVER,
     SPREAD,
     TOTAL,
@@ -225,3 +226,54 @@ class TestPersistence:
         path.write_text("{not json", encoding="utf-8")
         with pytest.raises(HalfPointError):
             load_table(path)
+
+
+
+class TestLineDiff:
+    """Signed points in the bettor's favour: positive means DK's number is better."""
+
+    @pytest.mark.parametrize(
+        "role,sharp,dk,expected",
+        [
+            # Both sides of a spread want the bigger number.
+            (FAVORITE, -3.0, -2.5, +0.5),   # laying less
+            (FAVORITE, -3.0, -3.5, -0.5),   # laying more
+            (UNDERDOG, 3.0, 3.5, +0.5),     # getting more
+            (UNDERDOG, 3.0, 2.5, -0.5),     # getting less
+            (FAVORITE, -3.0, -3.0, 0.0),
+            # An Over wants a lower total, an Under a higher one.
+            (OVER, 53.0, 51.5, +1.5),
+            (OVER, 53.0, 54.5, -1.5),
+            (UNDER, 53.0, 51.5, -1.5),
+            (UNDER, 53.0, 54.5, +1.5),
+            (OVER, 53.0, 53.0, 0.0),
+        ],
+    )
+    def test_direction(self, role, sharp, dk, expected):
+        assert line_diff(role, sharp, dk) == pytest.approx(expected)
+
+    def test_the_two_sides_of_a_total_are_opposites(self):
+        over = line_diff(OVER, 53.0, 51.5)
+        under = line_diff(UNDER, 53.0, 51.5)
+        assert over == pytest.approx(-under)
+
+    def test_the_two_sides_of_a_spread_move_together(self):
+        """A half point off the number helps whichever side is getting it."""
+        favorite = line_diff(FAVORITE, -3.0, -2.5)
+        underdog = line_diff(UNDERDOG, 3.0, 3.5)
+        assert favorite == underdog == pytest.approx(0.5)
+
+    @pytest.mark.parametrize("sharp,dk", [(None, 51.5), (53.0, None), (None, None)])
+    def test_a_missing_number_has_no_difference(self, sharp, dk):
+        assert line_diff(OVER, sharp, dk) is None
+
+    def test_a_better_number_agrees_with_a_better_fair_price(self, halfpoint_table):
+        """The sign has to match what the table does to the probability."""
+        diff = line_diff(OVER, 53.0, 51.5)
+        moved = halfpoint_table.translate(TOTAL, OVER, 0.50, 53.0, 51.5)
+        assert diff > 0 and moved > 0.50
+
+    def test_a_worse_number_agrees_too(self, halfpoint_table):
+        diff = line_diff(UNDER, 53.0, 51.5)
+        moved = halfpoint_table.translate(TOTAL, UNDER, 0.50, 53.0, 51.5)
+        assert diff < 0 and moved < 0.50

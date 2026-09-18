@@ -32,7 +32,7 @@
     margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 48px; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 16px 48px; }
   header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
            justify-content: space-between; margin-bottom: 4px; }
   h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
@@ -73,7 +73,7 @@
   .table-scroll { overflow-x: auto; border: 1px solid var(--line);
                   border-radius: 10px; background: var(--panel); }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: 9px 10px; text-align: left; white-space: nowrap;
+  th, td { padding: 9px 9px; text-align: left; white-space: nowrap;
            border-bottom: 1px solid var(--line-soft); }
   th {
     position: sticky; top: 0; z-index: 1; background: var(--panel);
@@ -87,6 +87,8 @@
   td.sharp { line-height: 1.25; }
   td.sharp .src { display: block; font-size: 11px; color: var(--muted); }
   .edge { font-weight: 600; color: var(--accent); }
+  .better { color: var(--accent); font-weight: 600; }
+  .worse { color: var(--danger); font-weight: 600; }
   .pill {
     display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
     font-size: 11px; font-weight: 600; color: var(--accent);
@@ -174,6 +176,7 @@
           <th>Pick</th>
           <th class="num">DK</th>
           <th class="num">Sharp</th>
+          <th class="num" title="How much better (+) or worse (−) DK's number is than the sharp book's">Line</th>
           <th class="num">Fair %</th>
           <th class="num">DK %</th>
           <th class="num">Edge</th>
@@ -329,6 +332,18 @@
       src.className = "src";
       src.textContent = row.sharp_source;
       sharpCell.appendChild(src);
+      var diff = row.line_diff;
+      var diffCell = cell(
+        tr,
+        diff === null || diff === undefined || diff === 0 ? "–" : (diff > 0 ? "+" : "") + diff,
+        "num" + (diff > 0 ? " better" : diff < 0 ? " worse" : ""),
+        "Line diff"
+      );
+      if (diff) {
+        diffCell.title = diff > 0
+          ? "DK's number is " + Math.abs(diff) + " points better than the sharp book's"
+          : "DK's number is " + Math.abs(diff) + " points worse than the sharp book's";
+      }
       cell(tr, fmtPct(row.fair_pct), "num", "Fair %");
       cell(tr, fmtPct(row.dk_pct), "num", "DK %");
       cell(tr, fmtEdge(row.edge_pct), "num edge", "Edge");

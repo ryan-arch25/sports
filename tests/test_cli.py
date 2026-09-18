@@ -430,3 +430,60 @@ class TestPropsWiring:
         # The sample board kicks off more than an hour out.
         assert run(tmp_path, "--props", "--props-window", "1", "--yes") == 0
         assert "no games inside the props window" in capsys.readouterr().out
+
+
+class TestLineDiffColumn:
+    def test_the_table_has_the_column(self, tmp_path, capsys):
+        run(tmp_path)
+        out = capsys.readouterr().out
+        assert "LINE DIFF" in out
+
+    def test_a_moved_number_shows_its_difference(self, tmp_path, capsys, halfpoint_table):
+        from cfb_edge.halfpoint import save_table
+
+        table_path = save_table(halfpoint_table, tmp_path / "hp.json")
+        config = tmp_path / "config.toml"
+        config.write_text(f'[paths]\nhalfpoint_table = "{table_path}"\n', encoding="utf-8")
+        assert main([
+            "scan", "--config", str(config), "--cache-file", FIXTURE,
+            "--no-files", "--no-db", "--min-edge", "1", "--no-color",
+        ]) == 0
+        line = next(
+            row for row in capsys.readouterr().out.splitlines() if "Over 51.5" in row
+        )
+        # DK's 51.5 is a point and a half below Pinnacle's 53, which helps the Over.
+        assert "+1.5" in line
+
+    def test_same_number_rows_show_a_dash(self, tmp_path, capsys):
+        run(tmp_path)
+        line = next(
+            row for row in capsys.readouterr().out.splitlines()
+            if "Michigan Wolverines +6.5" in row
+        )
+        assert "+6.5" in line
+        columns = [c for c in line.split("  ") if c.strip()]
+        assert "-" in columns
+
+    def test_the_csv_carries_the_difference(self, tmp_path, capsys):
+        run(tmp_path)
+        capsys.readouterr()
+        path = next((tmp_path / "runs").glob("*.csv"))
+        rows = list(csv.DictReader(path.open(encoding="utf-8")))
+        assert "line_diff" in rows[0]
+        totals = {r["pick"]: r["line_diff"] for r in rows if r["market"] == "totals"}
+        assert float(totals["Over 51.5"]) == 1.5
+        assert float(totals["Under 51.5"]) == -1.5
+
+    def test_the_json_carries_the_difference(self, tmp_path, capsys):
+        run(tmp_path)
+        capsys.readouterr()
+        payload = json.loads(next((tmp_path / "runs").glob("*.json")).read_text())
+        over = next(b for b in payload["bets"] if b["pick"] == "Over 51.5")
+        assert over["line_diff"] == 1.5
+
+    def test_the_flagged_section_shows_it_too(self, tmp_path, capsys):
+        run(tmp_path)
+        out = capsys.readouterr().out
+        flagged = out.split("Different number")[1]
+        assert "LINE DIFF" in flagged
+        assert "+1.5" in flagged and "-1.5" in flagged

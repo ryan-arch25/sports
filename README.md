@@ -12,19 +12,21 @@ lines, log the bets you actually placed, score them against the close, and serve
 the whole thing as a web dashboard your friends can open.
 
 ```
-GAME                              KICKOFF (ET)        MARKET     PICK                        DK                SHARP  FAIR%    DK%  EDGE  EV/$100   STAKE
---------------------------------  ------------------  ---------  ------------------------  ----  -------------------  -----  -----  ----  -------  ------
-Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Total      Over 51.5                 -110  -105 @53 (pinnacle)  56.2%  52.4%  3.8%    +7.29  $40.00
-Ohio State Buckeyes @ Michigan …  Sun 09/20 12:00 PM  Spread     Michigan Wolverines +6.5  +110         -110 (circa)  50.0%  47.6%  2.4%    +5.00  $22.73
-Texas Longhorns @ Oklahoma Soon…  Sun 09/20 8:00 PM   Total      Over 44.5                 +110  -109 (consensus(2))  49.8%  47.6%  2.2%    +4.55  $20.66
-Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Moneyline  Georgia Bulldogs ML       +145      +130 (pinnacle)  42.4%  40.8%  1.5%    +3.76  $12.96
-Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Spread     Georgia Bulldogs +3.5     +105      -105 (pinnacle)  50.0%  48.8%  1.2%    +2.50  $11.90
+GAME                              KICKOFF (ET)        MARKET     PICK                        DK                SHARP  LINE DIFF  FAIR%    DK%  EDGE  EV/$100   STAKE
+--------------------------------  ------------------  ---------  ------------------------  ----  -------------------  ---------  -----  -----  ----  -------  ------
+Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Total      Over 51.5                 -110  -105 @53 (pinnacle)       +1.5  56.2%  52.4%  3.8%    +7.29  $40.00
+Ohio State Buckeyes @ Michigan …  Sun 09/20 12:00 PM  Spread     Michigan Wolverines +6.5  +110         -110 (circa)          -  50.0%  47.6%  2.4%    +5.00  $22.73
+Texas Longhorns @ Oklahoma Soon…  Sun 09/20 8:00 PM   Total      Over 44.5                 +110  -109 (consensus(2))          -  49.8%  47.6%  2.2%    +4.55  $20.66
+Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Moneyline  Georgia Bulldogs ML       +145      +130 (pinnacle)          -  42.4%  40.8%  1.5%    +3.76  $12.96
+Georgia Bulldogs @ Alabama Crim…  Sun 09/20 7:30 PM   Spread     Georgia Bulldogs +3.5     +105      -105 (pinnacle)          -  50.0%  48.8%  1.2%    +2.50  $11.90
 
 5 bet(s) at >= 1% edge | total stake $108.26 | expected profit $5.78
 ```
 
-The first row is DraftKings on a different number from Pinnacle (51.5 against 53).
-`@53` marks a price that came through the half-point table.
+The first row is DraftKings on a different number from Pinnacle: `@53` marks a
+price that came through the half-point table, and **LINE DIFF** `+1.5` says
+DK's 51.5 is a point and a half in the Over's favour. A dash means both books
+are on the same number.
 
 ## Setup
 
@@ -195,6 +197,29 @@ Pushes are handled the way a bet settles — laying 3.5 instead of 3 turns every
 push on 3 into a loss, which is exactly what the table prices. Those rows show up
 in the scan with the sharp's own number in the SHARP column (`-105 @53`) and are
 counted separately in the run summary.
+
+### The line diff column
+
+`LINE DIFF` is the number gap in the bet's favour, in the market's own units:
+
+| | | |
+| --- | --- | --- |
+| DK `-2.5` vs Pinnacle `-3` | `+0.5` | laying less, so better |
+| DK `-3.5` vs Pinnacle `-3` | `-0.5` | laying more, so worse |
+| DK `+3.5` vs Pinnacle `+3` | `+0.5` | getting more, so better |
+| Over `51.5` vs Pinnacle `53` | `+1.5` | a lower total helps an Over |
+| Under `51.5` vs Pinnacle `53` | `-1.5` | and hurts an Under |
+
+Positive is always the better number for that pick, whichever side it is, and
+the two sides of a market always carry opposite signs. A dash means the books
+agree. Player props report in their own units, so a passing-yards line reads
+`+2` for two yards, not two points.
+
+The column is independent of the pricing: a line too far off the sharp number
+to translate still shows how far off it is, and so does a prop the table does
+not cover. Read it next to `EDGE` — a bet on a worse number with a positive
+edge is one where DraftKings' price is paying you for the number, which is
+worth knowing before you take it.
 
 **What it will not do.** The translation is refused, and the line goes back to
 being flagged, when:
@@ -389,8 +414,10 @@ Updated Sat 09/20 10:15 AM ET (2 min ago) · 48 games · live pull from Sat 09/2
 ```
 
 It shows the same ranked table as the terminal — game, kickoff in ET, market,
-pick, DK price, sharp price, fair %, DK %, edge, EV per $100 and stake — with a
-`½pt` badge on any line priced through the half-point table. Filters for market
+pick, DK price, sharp price, line diff, fair %, DK %, edge, EV per $100 and
+stake — with a `½pt` badge on any line priced through the half-point table and
+the line diff coloured green when DK's number is the better one, red when it is
+worse. Filters for market
 and minimum edge are client-side, so they are instant and cost no requests; they
 are remembered per browser. On a phone each bet becomes a labelled card rather
 than a table you have to scroll sideways.
@@ -445,6 +472,7 @@ configuration:
    | `DASHBOARD_REFRESH_MINUTES` | no | Default 30 |
    | `DASHBOARD_TITLE` | no | Page title |
    | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data`. Set it to your volume's mount path |
+   | `HALFPOINT_TABLE` | no | Path to the half-point table, overriding `$DATA_DIR/halfpoint.json` |
    | `APP_USER` | no | User the entrypoint drops to, default `cfbedge` |
 
    `config.toml` is gitignored, so it is not in the image — on Railway these
@@ -481,6 +509,24 @@ it cannot write:
 
 An empty `data_dir_problems` means the volume is set up correctly.
 
+### Getting the half-point table onto the deployment
+
+The table is built by `cfb-edge halfpoint build` from results you download, and
+that fetch does not run inside the web container. Two ways to get it there:
+
+- **On the volume.** Build it locally, then copy `halfpoint.json` into the
+  volume at `$DATA_DIR/halfpoint.json`. It survives redeploys and you can
+  refresh it mid-season without rebuilding the image.
+- **In the image.** Commit the built table to the repo root as
+  `halfpoint.json` and set `HALFPOINT_TABLE=/app/halfpoint.json`. The
+  Dockerfile copies it when it is present and builds fine when it is not. A
+  table from ten seasons is a hundred kilobytes or so, which is a reasonable
+  thing to commit.
+
+Without a table the dashboard still works — lines off the sharp number are
+flagged rather than priced, exactly as they were before the table existed, and
+the line diff column still shows the gap.
+
 Keep `numReplicas = 1`: each replica runs its own scan schedule, so two replicas
 means two sets of API requests against one quota.
 
@@ -503,7 +549,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-476 tests, no network access required. The odds conversion and de-vig math are
+511 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself

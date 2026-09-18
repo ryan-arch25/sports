@@ -106,6 +106,11 @@ def apply_env_overrides(cfg: Config, env: dict[str, str] | None = None) -> Confi
         cfg.db_path = base / "cfb_edge.sqlite"
         cfg.scores_db_path = base / "scores.sqlite"
         cfg.halfpoint_table_path = base / "halfpoint.json"
+    # The half-point table cannot be built inside the container (it needs the
+    # CFBD fetch), so a deployment either keeps it on the volume under DATA_DIR
+    # or ships one committed to the repo and points at it here.
+    if env.get("HALFPOINT_TABLE"):
+        cfg.halfpoint_table_path = Path(env["HALFPOINT_TABLE"])
     if cfg.kelly_fraction <= 0:
         log.warning("KELLY_FRACTION must be > 0; using 0.25")
         cfg.kelly_fraction = 0.25
