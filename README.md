@@ -8,7 +8,8 @@ Pinnacle as the fair-price reference (Circa, then a consensus of the other books
 as fallbacks), and ranks the DraftKings prices that beat that fair price. It can
 also watch the board on a loop, price lines that sit off the sharp number using a
 half-point table built from historical results, scan player props and alternate
-lines, log the bets you actually placed, and score them against the close.
+lines, log the bets you actually placed, score them against the close, and serve
+the whole thing as a web dashboard your friends can open.
 
 ```
 GAME                              KICKOFF (ET)        MARKET     PICK                        DK                SHARP  FAIR%    DK%  EDGE  EV/$100   STAKE
@@ -62,6 +63,7 @@ Kelly, all three game markets).
 | `cfb-edge halfpoint build` / `show` | Build and inspect the half-point value table. |
 | `cfb-edge bets add` / `list` | Log a bet you placed, and review what you have logged. |
 | `cfb-edge clv` | Compare your prices to the closing line. |
+| `cfb-edge serve` | Run the web dashboard (FastAPI). |
 
 ```bash
 cfb-edge                              # scan, or: python -m cfb_edge
@@ -364,6 +366,105 @@ from +110 to +125 you get told again, but a rescan that finds the same price doe
 not repeat itself. A webhook that is down or misconfigured prints a warning and
 leaves the scan alone, and nothing is recorded as sent unless Discord accepted it.
 
+## Web dashboard
+
+A single page, no build step: FastAPI serves one HTML file, the page fetches
+JSON and renders the ranked table in the browser.
+
+```bash
+pip install -r requirements-web.txt
+export DASHBOARD_PASSWORD='something your friends can remember'
+cfb-edge serve                      # http://127.0.0.1:8000
+cfb-edge serve --host 0.0.0.0 --port 8080
+```
+
+The dashboard **never scans on request**. A background task runs the scan every
+30 minutes (`[web] refresh_minutes`, or `DASHBOARD_REFRESH_MINUTES`) and every
+page load reads the last finished scan, so opening the page ten times costs
+nothing. The page polls for new results once a minute, and the header carries
+the stamp:
+
+```
+Updated Sat 09/20 10:15 AM ET (2 min ago) · 48 games · live pull from Sat 09/20 10:15 AM ET
+```
+
+It shows the same ranked table as the terminal — game, kickoff in ET, market,
+pick, DK price, sharp price, fair %, DK %, edge, EV per $100 and stake — with a
+`½pt` badge on any line priced through the half-point table. Filters for market
+and minimum edge are client-side, so they are instant and cost no requests; they
+are remembered per browser. On a phone each bet becomes a labelled card rather
+than a table you have to scroll sideways.
+
+A **Refresh** button forces a scan, rate-limited to once every 30 seconds. It is
+usually free: the odds cache means a refresh inside `max_age_minutes` replays
+the last pull instead of spending quota.
+
+If a refresh fails — a dead key, an API outage — the previous results stay on
+screen under a banner saying what went wrong and how old they are. It does not
+blank the page, and the schedule keeps trying.
+
+### The password
+
+One shared password, set as `DASHBOARD_PASSWORD`. Signing in exchanges it for an
+HMAC-signed cookie (HttpOnly, SameSite=Lax, Secure behind HTTPS) that lasts 30
+days, so the password is not re-sent on every request. Wrong guesses are
+throttled per IP: eight failures in five minutes and that address is locked out
+for the rest of the window.
+
+**If `DASHBOARD_PASSWORD` is unset the dashboard refuses to serve anything** and
+the background scan does not start — it fails closed rather than publishing your
+board to anyone with the URL. `/healthz` stays up either way so a platform health
+check still passes, and it reports whether the password is configured.
+
+Set `SECRET_KEY` too if you want sessions to survive a password change.
+Otherwise the signing key is derived from the password, which means changing the
+password signs everyone out — usually what you want.
+
+This is one password shared by a group. It keeps a public URL from being
+world-readable; it is not a user system, there are no accounts, and anyone with
+the password has the whole board.
+
+### Deploying to Railway
+
+`Dockerfile` and `railway.toml` are in the repo, so Railway needs no build
+configuration:
+
+1. Create a project from this repo. `railway.toml` selects the Dockerfile
+   builder and points the health check at `/healthz`.
+2. Under **Variables**, set:
+
+   | Variable | Required | What it is |
+   | --- | --- | --- |
+   | `ODDS_API_KEY` | yes | The Odds API key |
+   | `DASHBOARD_PASSWORD` | yes | The shared password |
+   | `SECRET_KEY` | no | Cookie signing key; defaults to one derived from the password |
+   | `BANKROLL` | no | Stake sizing, default 1000 |
+   | `KELLY_FRACTION` | no | Default 0.25 |
+   | `MIN_EDGE` | no | Where the page's edge filter starts, default 1.0 |
+   | `MARKETS` | no | e.g. `spreads,totals` |
+   | `DASHBOARD_REFRESH_MINUTES` | no | Default 30 |
+   | `DASHBOARD_TITLE` | no | Page title |
+   | `DATA_DIR` | no | Where the cache and run log are written, default `/app/data` |
+
+   `config.toml` is gitignored, so it is not in the image — on Railway these
+   variables are how you configure it. Railway sets `PORT` itself.
+3. Generate a domain and open it.
+
+Two things worth knowing about the deployment. Railway's filesystem is
+ephemeral, so the odds cache and the SQLite run log are lost on redeploy unless
+you attach a volume and point `DATA_DIR` at its mount path. And keep
+`numReplicas = 1`: each replica runs its own scan schedule, so two replicas
+means two sets of API requests against one quota.
+
+Locally the same image runs with:
+
+```bash
+docker build -t cfb-edge .
+docker run --rm -p 8000:8000 \
+  -e ODDS_API_KEY=... -e DASHBOARD_PASSWORD=... \
+  -v "$PWD/data:/app/data" cfb-edge
+```
+
 ## Tests
 
 ```bash
@@ -371,14 +472,15 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-379 tests, no network access required. The odds conversion and de-vig math are
+450 tests, no network access required. The odds conversion and de-vig math are
 covered against known values (`test_oddsmath.py`), along with sharp-book
 selection and consensus grouping (`test_fair.py`), edge, number-mismatch and
 half-point-translation handling (`test_edges.py`), the half-point model itself
 (`test_halfpoint.py`), the results fetcher (`test_scores.py`), props and quota
 guarding (`test_props.py`), watch-mode diffing (`test_watch.py`), bet logging and
 CLV (`test_bets.py`), Discord payloads and de-duplication (`test_notify.py`),
-caching (`test_cache.py`), and the CLI end to end against a sample board in
+caching (`test_cache.py`), the dashboard's auth, JSON API and scan schedule
+(`test_web.py`), and the CLI end to end against a sample board in
 `tests/fixtures/sample_odds.json` (`test_cli.py`).
 
 Network-facing code is tested against stubs. `tests/synthetic.py` generates

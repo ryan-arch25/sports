@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{title}}</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #14171a;
+    --muted: #5b6570;
+    --line: #dfe3e8;
+    --line-soft: #eceef1;
+    --accent: #1f7a4d;
+    --accent-soft: #e6f4ec;
+    --danger: #b3261e;
+    --danger-soft: #fdecea;
+    --warn: #8a6100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --panel: #1d2126; --ink: #eceff2; --muted: #97a1ac;
+      --line: #2d333a; --line-soft: #23282e; --accent: #4ec98a; --accent-soft: #17311f;
+      --danger: #ef6b62; --danger-soft: #35201e; --warn: #d9a441;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+           justify-content: space-between; margin-bottom: 4px; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  .stamp { color: var(--muted); font-size: 13px; }
+  .stamp strong { color: var(--ink); font-weight: 600; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  form.inline { display: inline; }
+
+  .banner {
+    margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+    border: 1px solid var(--danger); background: var(--danger-soft); color: var(--danger);
+  }
+  .banner.info { border-color: var(--line); background: var(--panel); color: var(--muted); }
+  .banner[hidden] { display: none; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: flex-end;
+    margin: 18px 0 14px; padding: 14px 16px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field > label { font-size: 12px; color: var(--muted); text-transform: uppercase;
+                   letter-spacing: 0.04em; }
+  select, input[type="number"] {
+    font: inherit; font-size: 14px; padding: 6px 10px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  }
+  input[type="number"] { width: 92px; }
+  .count { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line);
+                  border-radius: 10px; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 10px; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid var(--line-soft); }
+  th {
+    position: sticky; top: 0; z-index: 1; background: var(--panel);
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: var(--line-soft); }
+  td.num, th.num { text-align: right; }
+  td.game { white-space: normal; min-width: 160px; }
+  td.sharp { line-height: 1.25; }
+  td.sharp .src { display: block; font-size: 11px; color: var(--muted); }
+  .edge { font-weight: 600; color: var(--accent); }
+  .pill {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); border: 1px solid var(--accent);
+  }
+  .sub { color: var(--muted); font-size: 12px; }
+  .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+  footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
+  footer code { font-size: 11px; }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 16px 12px 40px; }
+    .count { width: 100%; margin-left: 0; text-align: left; }
+    .table-scroll { overflow-x: visible; }
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tbody tr { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    tbody tr:hover td { background: none; }
+    td {
+      display: flex; gap: 12px; justify-content: space-between; align-items: baseline;
+      padding: 3px 0; border: 0; white-space: normal; text-align: right;
+    }
+    td::before {
+      content: attr(data-label); flex: 0 0 auto; text-align: left;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--muted);
+    }
+    td.game, td.pick {
+      display: block; text-align: left; font-size: 16px; font-weight: 600;
+      padding-bottom: 2px;
+    }
+    td.game { color: var(--muted); font-size: 13px; font-weight: 500; }
+    td.game::before, td.pick::before { content: none; }
+    td.sharp { justify-content: space-between; }
+    td.sharp .src { display: inline; margin-left: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>{{title}}</h1>
+      <div class="stamp" id="stamp">Loading…</div>
+    </div>
+    <div class="header-actions">
+      <button id="refresh" type="button">Refresh</button>
+      <form class="inline" method="post" action="/logout">
+        <button type="submit">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="banner" id="error" hidden></div>
+  <div class="banner info" id="notice" hidden></div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="market">Market</label>
+      <select id="market"><option value="">All markets</option></select>
+    </div>
+    <div class="field">
+      <label for="minEdge">Min edge %</label>
+      <input id="minEdge" type="number" step="0.25" min="0" value="1">
+    </div>
+    <div class="field">
+      <label for="sort">Sort by</label>
+      <select id="sort">
+        <option value="edge">Edge</option>
+        <option value="ev">EV per $100</option>
+        <option value="stake">Stake</option>
+        <option value="kickoff">Kickoff</option>
+      </select>
+    </div>
+    <div class="count" id="count"></div>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Kickoff (ET)</th>
+          <th>Market</th>
+          <th>Pick</th>
+          <th class="num">DK</th>
+          <th class="num">Sharp</th>
+          <th class="num">Fair %</th>
+          <th class="num">DK %</th>
+          <th class="num">Edge</th>
+          <th class="num">EV/$100</th>
+          <th class="num">Stake</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden></div>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = null;
+  var POLL_MS = 60000;
+
+  var els = {
+    stamp: document.getElementById("stamp"),
+    error: document.getElementById("error"),
+    notice: document.getElementById("notice"),
+    market: document.getElementById("market"),
+    minEdge: document.getElementById("minEdge"),
+    sort: document.getElementById("sort"),
+    count: document.getElementById("count"),
+    rows: document.getElementById("rows"),
+    empty: document.getElementById("empty"),
+    footer: document.getElementById("footer"),
+    refresh: document.getElementById("refresh")
+  };
+
+  function store(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* private mode */ }
+  }
+  function recall(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function fmtPct(value) {
+    return value === null || value === undefined ? "–" : value.toFixed(1) + "%";
+  }
+  function fmtEdge(value) {
+    return value === null || value === undefined ? "–" : value.toFixed(2) + "%";
+  }
+  function fmtMoney(value, sign) {
+    if (value === null || value === undefined) return "–";
+    var text = Math.abs(value).toFixed(2);
+    if (sign) return (value >= 0 ? "+" : "−") + text;
+    return "$" + text;
+  }
+  function relative(iso) {
+    if (!iso) return "";
+    var seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (seconds < 90) return "just now";
+    var minutes = Math.round(seconds / 60);
+    if (minutes < 60) return minutes + " min ago";
+    var hours = Math.round(minutes / 60);
+    return hours === 1 ? "an hour ago" : hours + " hours ago";
+  }
+
+  function cell(row, text, className, label) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    if (className) td.className = className;
+    if (label) td.setAttribute("data-label", label);
+    row.appendChild(td);
+    return td;
+  }
+
+  function visibleRows() {
+    if (!state) return [];
+    var market = els.market.value;
+    var minEdge = parseFloat(els.minEdge.value);
+    if (isNaN(minEdge)) minEdge = 0;
+    var rows = state.rows.filter(function (row) {
+      if (market && row.market !== market) return false;
+      return (row.edge_pct === null ? -99 : row.edge_pct) >= minEdge;
+    });
+    var key = els.sort.value;
+    rows.sort(function (a, b) {
+      if (key === "kickoff") return (a.kickoff_utc || "").localeCompare(b.kickoff_utc || "");
+      var field = key === "ev" ? "ev_per_100" : key === "stake" ? "stake" : "edge_pct";
+      return (b[field] || 0) - (a[field] || 0);
+    });
+    return rows;
+  }
+
+  function render() {
+    if (!state) return;
+    var meta = state.meta;
+
+    if (meta.updated_at_et) {
+      var source = meta.odds_source === "api" ? "live pull" : "cached odds";
+      els.stamp.innerHTML = "";
+      var strong = document.createElement("strong");
+      strong.textContent = "Updated " + meta.updated_at_et + " ET";
+      els.stamp.appendChild(strong);
+      els.stamp.appendChild(document.createTextNode(
+        " (" + relative(meta.updated_at_utc) + ") · " + meta.games + " games · " +
+        source + " from " + (meta.odds_fetched_at_et || "?") + " ET"
+      ));
+    } else {
+      els.stamp.textContent = meta.scanning
+        ? "Running the first scan…"
+        : "No scan has finished yet.";
+    }
+
+    if (meta.error) {
+      els.error.hidden = false;
+      els.error.textContent = "Last refresh failed: " + meta.error +
+        (meta.updated_at_et ? " — showing the results from " + meta.updated_at_et + " ET." : "");
+    } else {
+      els.error.hidden = true;
+    }
+
+    var wanted = els.market.value;
+    var options = '<option value="">All markets</option>' + meta.markets.map(function (m) {
+      return '<option value="' + m.key + '">' + m.label + "</option>";
+    }).join("");
+    if (options !== els.market.dataset.options) {
+      els.market.innerHTML = options;
+      els.market.dataset.options = options;
+      els.market.value = wanted;
+      if (els.market.value !== wanted) els.market.value = "";
+    }
+
+    var rows = visibleRows();
+    els.rows.innerHTML = "";
+    rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      cell(tr, row.matchup, "game", "Game");
+      cell(tr, row.kickoff_et, "", "Kickoff (ET)");
+      cell(tr, row.market_label, "", "Market");
+      var pick = cell(tr, row.pick, "pick", "Pick");
+      if (row.translated) {
+        var pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = "½pt";
+        pill.title = row.note || "priced through the half-point table";
+        pick.appendChild(pill);
+      }
+      cell(tr, row.dk_price, "num", "DK");
+      var sharpCell = cell(tr, "", "num sharp", "Sharp");
+      var price = row.sharp_price;
+      if (row.translated && row.sharp_point !== null) price += " @" + row.sharp_point;
+      sharpCell.textContent = price;
+      var src = document.createElement("span");
+      src.className = "src";
+      src.textContent = row.sharp_source;
+      sharpCell.appendChild(src);
+      cell(tr, fmtPct(row.fair_pct), "num", "Fair %");
+      cell(tr, fmtPct(row.dk_pct), "num", "DK %");
+      cell(tr, fmtEdge(row.edge_pct), "num edge", "Edge");
+      cell(tr, fmtMoney(row.ev_per_100, true), "num", "EV/$100");
+      cell(tr, fmtMoney(row.stake, false), "num", "Stake");
+      els.rows.appendChild(tr);
+    });
+
+    var total = state.rows.length;
+    els.count.textContent = rows.length === total
+      ? total + " bet" + (total === 1 ? "" : "s")
+      : rows.length + " of " + total + " bets";
+
+    if (!rows.length) {
+      els.empty.hidden = false;
+      els.empty.textContent = total
+        ? "No bets match these filters."
+        : (meta.ready ? "No +EV lines on the board right now." : "Waiting for the first scan…");
+    } else {
+      els.empty.hidden = true;
+    }
+
+    var bits = [];
+    bits.push("Rescans every " + meta.refresh_minutes + " min");
+    bits.push("bankroll $" + Math.round(meta.bankroll).toLocaleString() +
+              " at " + meta.kelly_fraction + "× Kelly");
+    if (meta.flagged_different_number) {
+      bits.push(meta.flagged_different_number +
+                " line(s) on a number the sharp book does not have, not priced");
+    }
+    if (meta.quota_remaining) bits.push("API quota left: " + meta.quota_remaining);
+    els.footer.textContent = bits.join(" · ") + ".";
+  }
+
+  function load(url, options) {
+    return fetch(url, options || {}).then(function (response) {
+      if (response.status === 401) { window.location.href = "/login"; return null; }
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    });
+  }
+
+  function poll() {
+    load("/api/state").then(function (data) {
+      if (!data) return;
+      state = data;
+      els.notice.hidden = true;
+      render();
+    }).catch(function (err) {
+      els.error.hidden = false;
+      els.error.textContent = "Could not reach the server: " + err.message;
+    });
+  }
+
+  els.refresh.addEventListener("click", function () {
+    els.refresh.disabled = true;
+    els.refresh.textContent = "Refreshing…";
+    load("/api/refresh", { method: "POST" }).then(function (data) {
+      if (!data) return;
+      state = data;
+      render();
+      if (!data.refreshed && data.message) {
+        els.notice.hidden = false;
+        els.notice.textContent = data.message;
+      }
+    }).catch(function (err) {
+      els.error.hidden = false;
+      els.error.textContent = "Refresh failed: " + err.message;
+    }).finally(function () {
+      els.refresh.disabled = false;
+      els.refresh.textContent = "Refresh";
+    });
+  });
+
+  ["market", "minEdge", "sort"].forEach(function (name) {
+    var saved = recall("cfb-edge." + name);
+    if (saved !== null) els[name].value = saved;
+    els[name].addEventListener("change", function () {
+      store("cfb-edge." + name, els[name].value);
+      render();
+    });
+  });
+  els.minEdge.addEventListener("input", render);
+
+  poll();
+  window.setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+data
+tests
+*.sqlite
+*.sqlite-journal
+.env
+config.toml
+__pycache__
+**/__pycache__
+*.egg-info
+.pytest_cache
+Dockerfile
+.dockerignore

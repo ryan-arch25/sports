@@ -11,13 +11,17 @@ requires-python = ">=3.11"
 dependencies = ["requests>=2.28"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4"]
+web = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=7.4", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 
 [project.scripts]
 cfb-edge = "cfb_edge.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["cfb_edge*"]
+
+[tool.setuptools.package-data]
+cfb_edge = ["web/static/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

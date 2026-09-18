@@ -32,7 +32,7 @@ STATUS_NOTES = {
     NO_SHARP_SIDE: "sharp line had no matching side",
 }
 
-COMMANDS = ("scan", "watch", "scores", "halfpoint", "bets", "clv")
+COMMANDS = ("scan", "watch", "scores", "halfpoint", "bets", "clv", "serve")
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -156,6 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
     bet_list.add_argument("--open", action="store_true", help="only games that have not kicked off")
     bet_list.add_argument("--limit", type=int, default=50)
 
+    serve = sub.add_parser("serve", help="run the web dashboard")
+    add_common_args(serve)
+    serve.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")
+    serve.add_argument("--port", type=int, default=None,
+                       help="port (default: $PORT, else 8000)")
+    serve.add_argument("--reload", action="store_true", help="reload on code changes")
+
     clv = sub.add_parser("clv", help="compare your prices to the closing line")
     add_common_args(clv)
     clv.add_argument("--limit", type=int, default=100)
@@ -272,6 +279,7 @@ def _dispatch(argv: list[str]) -> int:
         "halfpoint": cmd_halfpoint,
         "bets": cmd_bets,
         "clv": cmd_clv,
+        "serve": cmd_serve,
     }
     try:
         return handlers[command](args, parser)
@@ -349,6 +357,35 @@ def cmd_clv(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     from cfb_edge.bets import cmd_clv_report
 
     return cmd_clv_report(load_cfg(args), args)
+
+
+def cmd_serve(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "the dashboard needs FastAPI and uvicorn: pip install -r requirements-web.txt",
+            file=sys.stderr,
+        )
+        return 1
+
+    port = args.port or int(os.environ.get("PORT", "8000"))
+    if not os.environ.get("DASHBOARD_PASSWORD"):
+        print(
+            "warning: DASHBOARD_PASSWORD is not set, so the dashboard will refuse "
+            "to serve. Set it in .env or the environment.",
+            file=sys.stderr,
+        )
+    print(f"cfb-edge dashboard on http://{args.host}:{port}")
+    uvicorn.run(
+        "cfb_edge.web.app:app",
+        host=args.host,
+        port=port,
+        reload=args.reload,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
+    return 0
 
 
 def _maybe_notify(cfg: Config, args: argparse.Namespace, result: ScanResult) -> None:

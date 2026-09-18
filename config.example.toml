@@ -107,3 +107,14 @@ edge_delta = 0.25
 # webhook_url = "https://discord.com/api/webhooks/..."
 min_edge = 2.0
 username = "cfb-edge"
+
+[web]
+# The dashboard's page title.
+title = "cfb-edge"
+
+# How often the background scan runs, in minutes.
+refresh_minutes = 30.0
+
+# The lowest edge sent to the browser. The page's filter starts at `min_edge`
+# above and can be dialled down to this. Raising it makes the payload smaller.
+floor_edge = 0.0

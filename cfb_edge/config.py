@@ -63,6 +63,10 @@ class Config:
     # watch mode
     watch_interval_minutes: float = 15.0
     watch_edge_delta: float = 0.25
+    # web dashboard
+    web_title: str = "cfb-edge"
+    web_refresh_minutes: float = 30.0
+    web_floor_edge: float = 0.0  # lowest edge sent to the page; it filters upward
     # discord notifications
     discord_webhook_url: str | None = None
     discord_min_edge: float = 2.0
@@ -229,6 +233,14 @@ def load_config(path: str | Path | None = None, env_path: str | Path = ".env") -
         cfg.watch_interval_minutes = float(watch["interval_minutes"])
     if "edge_delta" in watch:
         cfg.watch_edge_delta = float(watch["edge_delta"])
+
+    web = data.get("web") or {}
+    if "title" in web:
+        cfg.web_title = str(web["title"])
+    if "refresh_minutes" in web:
+        cfg.web_refresh_minutes = float(web["refresh_minutes"])
+    if "floor_edge" in web:
+        cfg.web_floor_edge = float(web["floor_edge"])
 
     discord = data.get("discord") or {}
     if "webhook_url" in discord:
